@@ -1,0 +1,31 @@
+{
+  "name": "shared-download-kit",
+  "version": "1.3.0",
+  "updated": "2026-09-26",
+  "scope": [
+    "page-panel-shell",
+    "toolbar-popup-shell",
+    "design-system-css",
+    "themes-json",
+    "brand-assets",
+    "sync-brand",
+    "theme-css",
+    "local-theme-preferences",
+    "icons",
+    "chromium-firefox-packaging",
+    "pack-manifest-validation",
+    "notice-coop-rating",
+    "footer-entries",
+    "debug-panel"
+  ],
+  "brandedPlatforms": ["bilibili", "youtube", "douyin"],
+  "notIncluded": [
+    "download",
+    "parse",
+    "page-agent",
+    "queue",
+    "platform-dom",
+    "weibo-brand-sync",
+    "xiaohongshu-brand-sync"
+  ]
+}

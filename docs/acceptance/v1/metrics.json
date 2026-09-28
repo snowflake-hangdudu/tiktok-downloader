@@ -1,0 +1,62 @@
+{
+  "bilibili-normal": {
+    "panel": {
+      "width": 408,
+      "height": 548,
+      "fontSize": "13px",
+      "color": "rgb(24, 24, 27)",
+      "background": "rgb(255, 255, 255)"
+    },
+    "header": {
+      "width": 406,
+      "height": 52,
+      "fontSize": "13px",
+      "color": "rgb(24, 24, 27)",
+      "background": "rgb(255, 255, 255)"
+    },
+    "icon": {
+      "width": 30,
+      "height": 30,
+      "fontSize": "13px",
+      "color": "rgb(24, 24, 27)",
+      "background": "rgba(0, 0, 0, 0)"
+    },
+    "cta": {
+      "width": 374,
+      "height": 44,
+      "fontSize": "14px",
+      "color": "rgb(255, 255, 255)",
+      "background": "rgba(0, 0, 0, 0)"
+    }
+  },
+  "douyin-normal": {
+    "panel": {
+      "width": 408,
+      "height": 560,
+      "fontSize": "13px",
+      "color": "rgb(24, 24, 27)",
+      "background": "rgb(255, 255, 255)"
+    },
+    "header": {
+      "width": 406,
+      "height": 52,
+      "fontSize": "13px",
+      "color": "rgb(24, 24, 27)",
+      "background": "rgb(255, 255, 255)"
+    },
+    "icon": {
+      "width": 30,
+      "height": 30,
+      "fontSize": "13px",
+      "color": "rgb(24, 24, 27)",
+      "background": "rgba(0, 0, 0, 0)"
+    },
+    "cta": {
+      "width": 374,
+      "height": 44,
+      "fontSize": "14px",
+      "color": "rgb(255, 255, 255)",
+      "background": "rgba(0, 0, 0, 0)"
+    }
+  }
+}

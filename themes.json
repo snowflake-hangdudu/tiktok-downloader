@@ -1,0 +1,56 @@
+{
+  "neutral": {
+    "bg": "#FFFFFF",
+    "surface": "#F7F8FA",
+    "surfaceHover": "#F2F4F7",
+    "surfaceStrong": "#ECEFF3",
+    "border": "#E5E7EB",
+    "borderSoft": "#EEF0F2",
+    "textPrimary": "#18181B",
+    "textSecondary": "#52525B",
+    "textMuted": "#71717A",
+    "footerBg": "#F3F4F6",
+    "footerText": "#52525B"
+  },
+  "platforms": {
+    "bilibili": {
+      "brand": "#00AEEC",
+      "strong": "#007FBA",
+      "hover": "#009FD8",
+      "soft": "#EAF9FF",
+      "border": "#A9E8FA",
+      "ctaFrom": "#009DDB",
+      "ctaTo": "#0074DA"
+    },
+    "youtube": {
+      "brand": "#FF3B3B",
+      "strong": "#D92828",
+      "hover": "#EA3030",
+      "soft": "#FFF0F0",
+      "border": "#FFC6C6",
+      "ctaFrom": "#EF3535",
+      "ctaTo": "#D82828"
+    },
+    "douyin": {
+      "brand": "#161823",
+      "strong": "#11131B",
+      "hover": "#252836",
+      "soft": "#F1F2F4",
+      "border": "#C9CBD1",
+      "ctaFrom": "#29364F",
+      "ctaTo": "#11131B",
+      "cyan": "#25DDE5",
+      "pink": "#FF3F6C"
+    },
+    "tiktok": {
+      "brand": "#FE2C55",
+      "strong": "#D61F45",
+      "hover": "#E91F4A",
+      "soft": "#FFF0F3",
+      "border": "#FFC2CE",
+      "ctaFrom": "#FE2C55",
+      "ctaTo": "#D61F45",
+      "cyan": "#25F4EE"
+    }
+  }
+}

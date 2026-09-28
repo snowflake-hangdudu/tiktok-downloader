@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../../douyin-downloader/shared/panel.css">
+<link rel="stylesheet" href="../../../douyin-downloader/content/content.css">
+<link rel="stylesheet" href="../../../douyin-downloader/shared/design-system.css">
+<style>
+  html, body { margin: 0; background: #dfe3e8; min-height: 100%; }
+  .dl-kit-panel { position: static !important; margin: 12px auto; width: 408px; }
+  .dl-kit-menu { position: static !important; bottom: auto; right: auto; width: 408px; }
+  .dl-kit-toggle { display: none; }
+  .dl-kit-body { padding: 12px 16px; }
+</style>
+</head>
+<body>
+<div class="dl-kit" data-theme="douyin" id="douyin-dl-root">
+  <div class="dl-kit-panel">
+    <div class="dl-kit-menu">
+      <header class="dl-kit-header">
+        <div class="dl-kit-header-left">
+          <img class="dl-kit-header-icon" src="../../../douyin-downloader/icons/icon48.png" width="30" height="30" alt="">
+          <span class="dl-kit-title">抖音视频下载助手</span>
+          <span class="dl-kit-version">v1.2.0</span>
+        </div>
+        <button class="dl-kit-close" type="button">×</button>
+      </header>
+      <div class="dl-kit-body">
+        <div class="dl-kit-home">
+          <div class="dy-dl">
+            <div class="dy-dl-mode-tabs">
+              <button type="button" class="active">单视频</button>
+              <button type="button">列表下载</button>
+            </div>
+            <div class="dy-dl-video-card">
+              <div style="width:96px;height:54px;background:#eceff3;border-radius:6px;flex-shrink:0;"></div>
+              <div style="min-width:0;flex:1;">
+                <div class="dy-dl-video-title">【预览】抖音短内容应自然收缩，底部不应出现大块空白</div>
+                <div class="dy-dl-video-author">示例作者</div>
+                <div class="dy-dl-video-sub">00:15</div>
+              </div>
+            </div>
+            <div class="dy-dl-section">
+              <div class="dy-dl-section-head">清晰度</div>
+              <div class="dy-dl-quality-pills">
+                <button class="dy-dl-pill" type="button">标清</button>
+                <button class="dy-dl-pill active" type="button">高清</button>
+              </div>
+            </div>
+            <div class="dy-dl-format-row dy-dl-section">
+              <div class="dy-dl-section-head dy-dl-format-label">格式</div>
+              <div class="dy-dl-format-pills">
+                <button type="button" class="dy-dl-pill active" disabled>MP4 视频</button>
+              </div>
+            </div>
+            <div class="dy-dl-estimate">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              <span>预计大小约 12 MB</span>
+            </div>
+            <button type="button" class="dy-dl-btn">开始下载</button>
+            <div class="dy-dl-tools">
+              <button type="button" class="dy-dl-history-btn">浏览器下载记录</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="dl-kit-footer">
+        <div class="dl-kit-footer-links">
+          <button type="button" class="dl-kit-footer-link">公告</button>
+          <button type="button" class="dl-kit-footer-link">开发合作</button>
+          <a class="dl-kit-footer-link" href="#">常见问题</a>
+          <a class="dl-kit-footer-link" href="#">隐私政策</a>
+          <a class="dl-kit-feedback" href="#">反馈邮箱：hangdudu0@agent.qq.com</a>
+        </div>
+      </footer>
+    </div>
+  </div>
+</div>
+</body>
+</html>

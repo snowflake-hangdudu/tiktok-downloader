@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../../bilibili-downloader/content/content.css">
+<link rel="stylesheet" href="../../../bilibili-downloader/shared/design-system.css">
+<style>
+  html, body { margin: 0; background: #dfe3e8; min-height: 100%; }
+  #bili-dl-panel { position: static !important; margin: 12px auto; width: 408px; }
+  #bili-dl-menu { position: static !important; width: 408px; max-width: 408px; max-height: 560px; display: flex; flex-direction: column; background: var(--bdl-bg); border: 1px solid var(--bdl-border); border-radius: 10px; box-shadow: var(--bdl-shadow); overflow: hidden; }
+  .bili-dl-body { flex: 1; overflow: auto; padding: 12px 16px; }
+</style>
+</head>
+<body>
+<div id="bili-dl-panel-root">
+  <div id="bili-dl-panel" data-theme="bilibili">
+    <div id="bili-dl-menu" class="bili-dl-menu">
+      <header class="bili-dl-header">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <img class="bili-dl-header-icon" src="../../../bilibili-downloader/icons/icon48.png" width="30" height="30" alt="">
+          <span class="bili-dl-title">下载助手 B站</span>
+          <span class="bili-dl-version" style="padding:2px 7px;border-radius:999px;">v1.1.12</span>
+        </div>
+        <button class="bili-dl-close" type="button" style="width:28px;height:28px;border:0;background:#f3f4f6;border-radius:6px;">×</button>
+      </header>
+      <div class="bili-dl-body">
+        <div class="bili-dl-video-card">
+          <div class="bili-dl-cover-wrap" style="width:96px;height:54px;background:#eceff3;border-radius:6px;flex-shrink:0;"></div>
+          <div style="min-width:0;flex:1;">
+            <div class="bili-dl-video-title">【预览】超长标题用于验证两行截断与面板信息层级，不应无限撑高信息卡</div>
+            <div class="bili-dl-video-author">示例作者名称可能会很长很长很长</div>
+            <div class="bili-dl-video-sub">10.6万播放 · 1天前</div>
+          </div>
+        </div>
+        <div class="bili-dl-section">
+          <div class="bili-dl-section-head">清晰度</div>
+          <div class="bili-dl-quality-pills">
+            <button class="bili-dl-pill" type="button">720P</button>
+            <button class="bili-dl-pill active" type="button">1080P</button>
+            <button class="bili-dl-pill" type="button">4K</button>
+          </div>
+        </div>
+        <div class="bili-dl-format-row bili-dl-section">
+          <div class="bili-dl-section-head bili-dl-format-label">格式</div>
+          <div class="bili-dl-format-pills">
+            <button class="bili-dl-pill active" type="button">MP4 视频</button>
+            <button class="bili-dl-pill" type="button">M4A 音频</button>
+          </div>
+        </div>
+        <div class="bili-dl-estimate">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>
+          <span>预计大小约 128 MB</span>
+        </div>
+        <button class="bili-dl-btn" type="button">开始下载</button>
+        <button class="bili-dl-btn bili-dl-btn-secondary" type="button">暂停全部</button>
+      </div>
+      <footer class="bili-dl-footer" style="padding:10px 16px;border-top:1px solid var(--bdl-border);">
+        <div class="bili-dl-footer-links" style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button type="button" class="bili-dl-faq-link">公告</button>
+          <button type="button" class="bili-dl-faq-link">开发合作</button>
+          <a class="bili-dl-faq-link" href="#">常见问题</a>
+          <a class="bili-dl-privacy-link" href="#">隐私政策</a>
+          <a class="bili-dl-feedback" href="#">反馈邮箱：hangdudu0@agent.qq.com</a>
+        </div>
+      </footer>
+    </div>
+  </div>
+</div>
+</body>
+</html>

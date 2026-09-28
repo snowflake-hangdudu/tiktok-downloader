@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="../shared/design-system.css">
+</head>
+<body data-theme="tiktok">
+  <div class="popup">
+    <header class="popup-header">
+      <img src="../icons/icon48.png" width="30" height="30" alt="" class="popup-icon">
+      <div class="popup-header-text">
+        <h1 id="app-title">下载助手</h1>
+        <span id="app-version" class="popup-version"></span>
+      </div>
+    </header>
+
+    <main class="popup-body">
+      <div id="state-loading">
+        <div class="popup-detect loading">
+          <span class="popup-dot pulse"></span>
+          <span>正在识别页面…</span>
+        </div>
+        <div class="popup-video-card is-loading">
+          <div class="popup-cover-wrap">
+            <div class="popup-sk-cover popup-shimmer"></div>
+          </div>
+          <div class="popup-video-meta">
+            <div class="popup-video-sk">
+              <span class="popup-sk-line popup-shimmer"></span>
+              <span class="popup-sk-line popup-shimmer short"></span>
+              <span class="popup-sk-line popup-shimmer shorter"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="state-ready" class="hidden">
+        <div class="popup-video-card">
+          <div class="popup-cover-wrap">
+            <img id="item-cover" class="popup-cover hidden" alt="">
+            <div id="item-cover-ph" class="popup-cover-ph">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+          </div>
+          <div class="popup-video-meta">
+            <div id="item-title" class="video-title"></div>
+            <div id="item-author" class="video-author hidden"></div>
+            <div id="item-sub" class="video-sub"></div>
+          </div>
+        </div>
+        <div id="ready-extra"></div>
+        <ul id="ready-tips" class="popup-tips compact"></ul>
+        <button id="btn-open-panel" type="button" class="popup-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          打开下载面板
+        </button>
+      </div>
+
+      <div id="state-empty" class="hidden">
+        <div class="popup-detect warn">
+          <span class="popup-dot warn"></span>
+          <span id="empty-detect">未识别到可保存页面</span>
+        </div>
+        <div class="popup-empty-hero">
+          <div class="popup-empty-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="5" width="18" height="14" rx="3"/>
+              <path d="M8 9h8M8 13h5"/>
+            </svg>
+          </div>
+          <p id="empty-title" class="popup-empty-title">请先打开目标页面</p>
+          <p id="empty-lead" class="popup-empty-lead">打开对应网站的内容页后按 F5，再点页面右下角图标保存。</p>
+          <p id="empty-current-site" class="popup-empty-site">当前页面：—</p>
+        </div>
+        <div id="empty-steps" class="popup-steps"></div>
+        <div id="empty-tags" class="popup-feature-tags"></div>
+        <a id="btn-go-site" class="popup-btn" href="#" target="_blank" rel="noopener">打开网站</a>
+      </div>
+
+      <div id="state-error" class="hidden">
+        <div class="popup-detect error">
+          <span class="popup-dot error"></span>
+          <span id="error-text">加载失败</span>
+        </div>
+        <div class="popup-empty-hero compact">
+          <p id="error-title" class="popup-empty-title">暂时无法读取页面信息</p>
+          <p id="error-hint" class="popup-error-hint">请在内容页按 F5 刷新后，再点击扩展图标。</p>
+        </div>
+        <button id="btn-retry" type="button" class="popup-btn popup-btn-outline">刷新并重试</button>
+      </div>
+
+      <section class="popup-history-section" aria-label="下载历史">
+        <button id="popup-history-toggle" type="button" class="popup-history-toggle" aria-expanded="false">
+          下载历史
+          <span id="popup-history-count" class="popup-history-count hidden"></span>
+        </button>
+        <div id="popup-history-panel" class="popup-history-panel hidden">
+          <div id="popup-history-list" class="popup-history-list"></div>
+          <button id="popup-history-clear" type="button" class="popup-history-clear hidden">清空历史</button>
+        </div>
+      </section>
+    </main>
+    <footer class="popup-footer">
+      <nav class="popup-footer-links" aria-label="帮助链接">
+        <a id="popup-faq" class="popup-footer-link" href="https://snowflake-hangdudu.github.io/tiktok-downloader/faq.html" target="_blank" rel="noopener">常见问题</a>
+        <span class="popup-footer-sep" aria-hidden="true">·</span>
+        <a id="popup-privacy" class="popup-footer-link" href="https://snowflake-hangdudu.github.io/tiktok-downloader/" target="_blank" rel="noopener">隐私政策</a>
+      </nav>
+      <div class="popup-footer-line">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        仅供个人学习 · 请遵守 TikTok 使用条款
+      </div>
+    </footer>
+  </div>
+  <script src="popup-config.js"></script>
+  <script src="../shared/runtime.js"></script>
+  <script src="../shared/theme.js"></script>
+  <script src="popup.js"></script>
+  <script src="popup-history.js"></script>
+</body>
+</html>
