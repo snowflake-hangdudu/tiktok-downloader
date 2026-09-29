@@ -30,7 +30,8 @@ const item = {
       bitrate: 500000,
       playAddr: { url_list: ['https://v16-webapp-prime.tiktok.com/video/540.mp4'] }
     }],
-    cover: { url_list: ['https://p16-sign-va.tiktokcdn.com/cover.jpg'] }
+    cover: { url_list: ['https://p16-sign-va.tiktokcdn.com/cover.jpg'] },
+    originCover: { url_list: ['https://p16-sign-va.tiktokcdn.com/origin-cover.jpg'] }
   },
   music: {
     mimeType: 'audio/mp4',
@@ -92,7 +93,7 @@ assert.equal(payload.video.id, '9876543210');
 assert.equal(payload.video.title, 'A public video with real resources');
 assert.equal(payload.video.author, 'Sample Creator');
 assert.equal(payload.video.publishTime, '2023-11-14T22:13:20.000Z');
-assert.equal(payload.video.cover, 'https://p16-sign-va.tiktokcdn.com/cover.jpg');
+assert.equal(payload.video.cover, 'https://p16-sign-va.tiktokcdn.com/origin-cover.jpg');
 assert.equal(payload.video.resources.filter((resource) => resource.type === 'video').length, 1, 'all resolutions collapse to one video option');
 assert.ok(payload.video.resources.some((resource) => resource.url.endsWith('/540.mp4') || resource.backupUrls?.some((url) => url.endsWith('/540.mp4'))));
 const duplicateBitrateItem = {
@@ -286,8 +287,8 @@ const mixedContext = vm.createContext({
 vm.runInContext(readFileSync(path.join(root, 'content', 'page-agent.js'), 'utf8'), mixedContext, { filename: 'page-agent-mixed-codec.js' });
 await new Promise((resolve) => setTimeout(resolve, 10));
 const mixedVideo = mixedSnapshots.at(-1).payload.video.resources.find((resource) => resource.type === 'video');
-assert.ok(mixedVideo.url.endsWith('/h264-play.mp4'), 'H.264 is attempted before a HEVC mirror');
-assert.ok(mixedVideo.backupUrls.some((url) => url.endsWith('/hevc-download.mp4')), 'explicit HEVC download remains a fallback');
+assert.ok(mixedVideo.url.endsWith('/hevc-download.mp4'), 'chrome.downloads uses the download address first');
+assert.ok(!mixedVideo.url.endsWith('/h264-play.mp4'), 'H.264 play is not the first Chrome download attempt');
 
 const playOnlyHdItem = {
   ...item,
@@ -337,12 +338,16 @@ assert.ok(
   'primary URL prefers a downloadable address over play-only 1920p'
 );
 assert.ok(
+  !playOnlyVideo.url.endsWith('/play-only-1920.mp4') && !playOnlyVideo.url.endsWith('/bitrate-play-1920.mp4'),
+  'play-only 1920p is not the first download attempt'
+);
+assert.ok(
   playOnlyVideo.backupUrls.some((url) => url.endsWith('/play-only-1920.mp4') || url.endsWith('/bitrate-play-1920.mp4')),
   'play-only 1920p stays available as a silent backup'
 );
 assert.ok(
-  !playOnlyVideo.url.endsWith('/play-only-1920.mp4') && !playOnlyVideo.url.endsWith('/bitrate-play-1920.mp4'),
-  'play-only 1920p is not the first download attempt'
+  Array.isArray(playOnlyVideo.downloadUrls) && playOnlyVideo.downloadUrls.every((url) => !url.endsWith('/play-only-1920.mp4') && !url.endsWith('/bitrate-play-1920.mp4')),
+  'chrome.downloads only receives download addresses'
 );const low = payload.video.resources.find((resource) => resource.type === 'video');
 assert.ok(low.url.endsWith('/540.mp4') || low.backupUrls.some((url) => url.endsWith('/540.mp4')));
 const audioResource = payload.video.resources.find((resource) => resource.type === 'audio');
@@ -643,4 +648,23 @@ await dynamicWindow.fetch('/api/preload/item_list/');
 await new Promise((resolve) => setTimeout(resolve, 400));
 assert.equal(dynamicSnapshots.at(-1).payload.video.id, '9876543213', 'the fetched item is matched to the newly visible card');
 assert.ok(dynamicSnapshots.at(-1).payload.video.resources.some((resource) => resource.url.includes('later-') || resource.backupUrls?.some((url) => url.includes('later-'))));
+
+const pinnedSnapshots = [];
+const pinnedItem = { ...item, id: '9876543299', desc: 'Pinned creator video' };
+const creatorLocation = { href: 'https://www.tiktok.com/@sample_creator', origin: 'https://www.tiktok.com', pathname: '/@sample_creator' };
+const pinnedWindow = {
+  addEventListener() {},
+  postMessage(message) { pinnedSnapshots.push(message); },
+  fetch: async () => ({ clone: () => ({ json: async () => ({ itemList: [item], pinnedItemList: [pinnedItem] }) }) })
+};
+const pinnedContext = vm.createContext({
+  window: pinnedWindow, document, location: creatorLocation,
+  history: { pushState() {}, replaceState() {} },
+  URL, Date, Math, Set, Map, WeakSet, Array, Object, String, Number, RegExp,
+  MutationObserver, setTimeout, clearTimeout, setInterval: () => 0, queueMicrotask
+});
+vm.runInContext(readFileSync(path.join(root, 'content', 'page-agent.js'), 'utf8'), pinnedContext, { filename: 'page-agent-pinned.js' });
+await pinnedWindow.fetch('/api/post/item_list/');
+await new Promise((resolve) => setTimeout(resolve, 400));
+assert.ok(pinnedSnapshots.at(-1).payload.videos.some((video) => video.id === pinnedItem.id), 'pinned creator items are retained alongside ordinary posts');
 console.log('detail-page, initial feed and scroll-loaded feed parsing passed');

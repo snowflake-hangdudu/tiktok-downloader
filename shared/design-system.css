@@ -653,62 +653,56 @@ body[data-theme] .popup-video-card {
 #yt-dl-panel[data-theme] .yt-dl-cover,
 #yt-dl-panel[data-theme] .yt-dl-cover-wrap,
 .dl-kit[data-theme] .dy-dl-cover,
-.dl-kit[data-theme] .dy-dl-cover-wrap,
-.dl-kit[data-theme]:not([data-theme="tiktok"]) .tk-dl-cover,
-.dl-kit[data-theme]:not([data-theme="tiktok"]) .tk-dl-cover-wrap,
-body[data-theme]:not([data-theme="tiktok"]) .popup-cover,
-body[data-theme]:not([data-theme="tiktok"]) .popup-cover-wrap {
+.dl-kit[data-theme] .dy-dl-cover-wrap {
   width: 96px;
   border-radius: 6px;
 }
 
 #bili-dl-panel[data-theme] .bili-dl-cover,
 #yt-dl-panel[data-theme] .yt-dl-cover,
-.dl-kit[data-theme] .dy-dl-cover,
-.dl-kit[data-theme]:not([data-theme="tiktok"]) .tk-dl-cover,
-.dl-kit[data-theme]:not([data-theme="tiktok"]) .tk-dl-cover-wrap,
-body[data-theme]:not([data-theme="tiktok"]) .popup-cover {
+.dl-kit[data-theme] .dy-dl-cover {
   height: 54px;
   object-fit: cover;
 }
 
-/* TikTok — vertical 9:16 cover (popup + page panel) */
-.dl-kit[data-theme="tiktok"] .tk-dl-cover-wrap,
-body[data-theme="tiktok"] .popup-cover-wrap {
+/* TikTok — always 9:16, independent of color theme id */
+#tiktok-dl-root .tk-dl-cover-wrap,
+body[data-kit="tiktok"] .popup-cover-wrap {
   position: relative;
   overflow: hidden;
   border-radius: 8px;
 }
 
-.dl-kit[data-theme="tiktok"] .tk-dl-cover-wrap {
+#tiktok-dl-root .tk-dl-cover-wrap {
   width: 72px;
   height: 128px;
   aspect-ratio: 9 / 16;
 }
 
-body[data-theme="tiktok"] .popup-cover-wrap {
+body[data-kit="tiktok"] .popup-cover-wrap {
   width: 63px;
   height: 112px;
   aspect-ratio: 9 / 16;
 }
 
-.dl-kit[data-theme="tiktok"] .tk-dl-cover,
-.dl-kit[data-theme="tiktok"] .tk-dl-cover-ph,
-.dl-kit[data-theme="tiktok"] .tk-dl-sk-cover,
-body[data-theme="tiktok"] .popup-cover,
-body[data-theme="tiktok"] .popup-cover-ph,
-body[data-theme="tiktok"] .popup-sk-cover {
+#tiktok-dl-root .tk-dl-cover,
+#tiktok-dl-root .tk-dl-cover-ph,
+#tiktok-dl-root .tk-dl-sk-cover,
+body[data-kit="tiktok"] .popup-cover,
+body[data-kit="tiktok"] .popup-cover-ph,
+body[data-kit="tiktok"] .popup-sk-cover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center center;
 }
 
-.dl-kit[data-theme="tiktok"] .tk-dl-cover,
-.dl-kit[data-theme="tiktok"] .tk-dl-cover-ph,
-.dl-kit[data-theme="tiktok"] .tk-dl-sk-cover,
-body[data-theme="tiktok"] .popup-cover,
-body[data-theme="tiktok"] .popup-cover-ph,
-body[data-theme="tiktok"] .popup-sk-cover {
+#tiktok-dl-root .tk-dl-cover,
+#tiktok-dl-root .tk-dl-cover-ph,
+#tiktok-dl-root .tk-dl-sk-cover,
+body[data-kit="tiktok"] .popup-cover,
+body[data-kit="tiktok"] .popup-cover-ph,
+body[data-kit="tiktok"] .popup-sk-cover {
   position: absolute;
   inset: 0;
 }
@@ -777,8 +771,7 @@ body[data-theme] .video-sub {
 /* Cover download — secondary action */
 #bili-dl-panel[data-theme] .bili-dl-cover-download,
 #yt-dl-panel[data-theme] .yt-dl-cover-download,
-.dl-kit[data-theme] .dy-dl-cover-download,
-.dl-kit[data-theme]:not([data-theme="tiktok"]) .tk-dl-cover-download {
+.dl-kit[data-theme] .dy-dl-cover-download {
   box-sizing: border-box;
   width: 96px;
   min-height: 26px;

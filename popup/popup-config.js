@@ -3,9 +3,9 @@ function t(key, values) {
 }
 
 window.DOWNLOADER_POPUP_CONFIG = {
-  title: 'TikTok 视频下载助手',
+  title: 'TikTok Downloader',
   theme: 'tiktok',
-  initialTheme: 'tokyo-love',
+  initialTheme: 'default',
   themeKey: 'tiktok-dl-theme-v1',
   getInfoType: 'TIKTOK_DL_GET_INFO',
   openPanelType: 'TIKTOK_DL_OPEN_PANEL',
@@ -69,20 +69,20 @@ window.DOWNLOADER_POPUP_CONFIG = {
     if (open) open.disabled = false;
   },
   readyTips: [
-    '下载仅在你主动操作后开始',
-    '打开页面面板管理下载队列、设置和主题'
+    'Nothing downloads until you start it',
+    'Use the page panel for the queue, history, filename, and theme'
   ],
   empty: {
-    detect: '当前不是支持的下载页面',
-    title: '请打开 TikTok 视频或创作者主页',
-    lead: '在公开视频详情页可下载当前视频、音频和封面；创作者主页可扫描公开作品。',
+    detect: 'This page cannot be saved',
+    title: 'Open a TikTok video or creator page',
+    lead: 'A public video page can save the video, audio, and cover. A creator page can scan public posts.',
     homeUrl: 'https://www.tiktok.com/',
-    homeLabel: '打开 TikTok',
+    homeLabel: 'Open TikTok',
     steps: [],
     tags: []
   },
   error: {
-    title: '暂时无法读取 TikTok 页面信息',
-    hint: '请刷新 TikTok 页面后，再点击扩展图标重试。'
+    title: 'Can’t read this TikTok page yet',
+    hint: 'Refresh the TikTok page, then click the extension icon again.'
   }
 };

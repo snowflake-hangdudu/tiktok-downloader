@@ -4,3 +4,9 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+tiktok-downloader.zip
+tiktok-downloader-chromium.zip
+tiktok-downloader-firefox.xpi
+*.zip
+*.xpi
+

@@ -175,8 +175,9 @@ body {
 
 .popup-video-card {
   display: flex;
-  gap: 10px;
-  padding: 10px;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
   background: var(--dl-surface);
   border: 1px solid var(--dl-border);
   border-radius: var(--radius-md);
@@ -244,6 +245,10 @@ body {
 .popup-video-meta {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
 }
 
 .video-title {
@@ -259,7 +264,7 @@ body {
 }
 
 .video-author {
-  margin-top: 5px;
+  margin-top: 0;
   font-size: 12px;
   color: var(--dl-primary);
   font-weight: 500;

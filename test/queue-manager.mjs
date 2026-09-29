@@ -72,7 +72,7 @@ const api = {
       }
       const id = nextDownloadId++;
       nativeOptions.push(options);
-      const item = { id, byExtensionId: extensionId, state: 'in_progress', bytesReceived: 0, totalBytes: 100, url: options.url };
+      const item = { id, byExtensionId: extensionId, state: 'in_progress', bytesReceived: 0, totalBytes: 100000, url: options.url };
       nativeItems.set(id, item);
       if (deferNextDownload) {
         const pending = deferNextDownload;
@@ -267,7 +267,66 @@ fastGate.resolve();
 await waitFor(() => stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1006')?.status === 'completed', 'fast download completion');
 assert.equal(stored['tiktok-dl-history-v1'].filter((item) => item.id === 'task-1006' && item.status === 'completed').length, 1);
 
+// Firefox can omit byExtensionId from downloads.search results.
+await send({ type: 'TIKTOK_DL_QUEUE_ADD', tasks: [task('1007', 'task-1007')] });
+await waitFor(() => Number.isInteger(stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1007')?.downloadId), 'Firefox-style download start');
+const firefoxTask = stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1007');
+delete nativeItems.get(firefoxTask.downloadId).byExtensionId;
+nativeItems.get(firefoxTask.downloadId).state = 'complete';
+listeners.downloadsChanged.forEach((listener) => listener({ id: firefoxTask.downloadId, state: { current: 'complete' } }));
+await waitFor(() => stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1007')?.status === 'completed', 'Firefox-style completion');
+const repeat = { ...task('1007', 'task-1007-repeat'), forceDuplicate: true };
+await send({ type: 'TIKTOK_DL_QUEUE_ADD', tasks: [repeat] });
+await waitFor(() => Number.isInteger(stored['tiktok-dl-tasks-v1'].find((item) => item.id === repeat.id)?.downloadId), 'repeat download start');
+const duplicateWhileActive = await send({ type: 'TIKTOK_DL_QUEUE_ADD', tasks: [{ ...repeat, id: 'task-1007-active-duplicate' }] });
+assert.equal(duplicateWhileActive.skipped, 1, 'active duplicate is rejected even during an intentional repeat download');
+const repeated = stored['tiktok-dl-tasks-v1'].find((item) => item.id === repeat.id);
+nativeItems.get(repeated.downloadId).state = 'complete';
+listeners.downloadsChanged.forEach((listener) => listener({ id: repeated.downloadId, state: { current: 'complete' } }));
+await waitFor(() => stored['tiktok-dl-tasks-v1'].find((item) => item.id === repeat.id)?.status === 'completed', 'repeat download completion');
+
+// Pinned videos are checked before handing an address to the browser. A 403
+// does not create an .htm download; the next MP4 address is tried instead.
+const pinnedPrimary = 'https://v16-webapp-prime.tiktok.com/pinned-denied.mp4';
+const pinnedBackup = 'https://v19-webapp-prime.tiktok.com/pinned-valid.mp4';
+const probedUrls = [];
+context.fetch = async (url) => {
+  probedUrls.push(url);
+  if (url === pinnedPrimary) return { ok: false, status: 403 };
+  return { ok: true, headers: { get: () => 'video/mp4' },
+    arrayBuffer: async () => new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109]).buffer };
+};
+const pinnedTask = { ...task('1008', 'task-1008'), url: pinnedPrimary, backupUrls: [pinnedBackup], validateMedia: true };
+const downloadCountBeforePinned = nativeOptions.length;
+await send({ type: 'TIKTOK_DL_QUEUE_ADD', tasks: [pinnedTask] });
+await waitFor(() => stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1008')?.url === pinnedBackup
+  && Number.isInteger(stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1008')?.downloadId), 'pinned fallback download');
+assert.equal(nativeOptions.length, downloadCountBeforePinned + 1, 'the denied address never starts a browser download');
+assert.equal(nativeOptions.at(-1).url, pinnedBackup);
+assert.deepEqual(probedUrls, [pinnedPrimary, pinnedBackup]);
+const pinnedNative = stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1008');
+nativeItems.get(pinnedNative.downloadId).state = 'complete';
+listeners.downloadsChanged.forEach((listener) => listener({ id: pinnedNative.downloadId, state: { current: 'complete' } }));
+await waitFor(() => stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1008')?.status === 'completed', 'pinned fallback completion');
+
+await send({ type: 'TIKTOK_DL_QUEUE_ADD', tasks: [task('1009', 'task-1009')] });
+await waitFor(() => Number.isInteger(stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1009')?.downloadId), 'invalid document download start');
+const invalid = stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1009');
+Object.assign(nativeItems.get(invalid.downloadId), { state: 'complete', bytesReceived: 425, totalBytes: 425,
+  filename: 'C:\\Downloads\\denied.htm', mime: 'text/html' });
+listeners.downloadsChanged.forEach((listener) => listener({ id: invalid.downloadId, state: { current: 'complete' } }));
+await waitFor(() => stored['tiktok-dl-tasks-v1'].find((item) => item.id === 'task-1009')?.status === 'failed', 'HTML document is rejected');
+assert.ok(erasedIds.includes(invalid.downloadId), 'failed HTML download is removed from browser history');
+
 await send({ type: 'TIKTOK_DL_DATA_CLEAR', scope: 'all' });
 assert.equal(stored['tiktok-dl-tasks-v1'], undefined);
 assert.equal(stored['tiktok-dl-history-v1'], undefined);
+const firefoxManifest = JSON.parse(readFileSync(path.join(root, 'manifest.firefox.json'), 'utf8'));
+const firefoxContext = vm.createContext({
+  browser: api, URL, Promise, Date, Math, Set, Map, Object, Array, String, Number, Error,
+  console, setTimeout, clearTimeout
+});
+for (const file of firefoxManifest.background.scripts) {
+  vm.runInContext(readFileSync(path.join(root, file), 'utf8'), firefoxContext, { filename: file });
+}
 console.log('queue serialization, CDN fallback, concurrency, dedupe, restart recovery, retry and cleanup passed');

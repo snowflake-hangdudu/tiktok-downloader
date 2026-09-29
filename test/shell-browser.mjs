@@ -5,7 +5,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 900, height: 900 }, locale: 'zh-CN' });
   await page.setContent('<html><body></body></html>');
   await page.evaluate(() => {
     const storage = {}, listeners = new Set();
@@ -18,7 +18,7 @@ try {
     window.fetch = async () => ({ ok: true, json: async () => ({ themes: [] }) });
     window.testListeners = listeners;
   });
-  for (const file of ['runtime', 'dom', 'debug-flag', 'debug', 'remote-content', 'theme', 'settings', 'notice', 'rating', 'panel', 'shell']) {
+  for (const file of ['runtime', 'dom', 'debug-flag', 'debug', 'remote-content', 'theme', 'settings', 'notice', 'rating', 'panel', 'i18n', 'shell']) {
     await page.addScriptTag({ path: path.join(root, 'shared', file + '.js') });
   }
   await page.addStyleTag({ path: path.join(root, 'shared', 'panel.css') });

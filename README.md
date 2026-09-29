@@ -34,9 +34,21 @@ Windows：`npm.cmd test`。该命令运行公共生成与主题同步测试、�
 
 ## 打包
 
-Chromium ZIP：python scripts/pack.py
+Chrome 与 Edge 共用一份 Chromium 包：
 
-Firefox XPI：python scripts/pack_firefox.py
+```bash
+python scripts/pack.py
+```
+
+生成：`tiktok-downloader.zip`
+
+Firefox：
+
+```bash
+python scripts/pack_firefox.py
+```
+
+生成：`tiktok-downloader-firefox.xpi`
 
 - 常见问题：https://snowflake-hangdudu.github.io/tiktok-downloader/faq.html
 - 隐私政策：https://snowflake-hangdudu.github.io/tiktok-downloader/

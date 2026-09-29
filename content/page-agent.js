@@ -18,16 +18,23 @@
   let lastUrl = location.href;
   let lastSnapshotJson = '';
   const fetchedItems = new Map();
+  const recentVideos = new Map();
   const sponsoredDetails = new Map();
   const sponsoredRequests = new Map();
   const sponsoredFailures = new Map();
 
-  function loadSponsoredDetail(id, pageUrl) {
-    if (sponsoredDetails.has(id) || sponsoredRequests.has(id) || typeof window.fetch !== 'function'
-      || Date.now() - (sponsoredFailures.get(id) || 0) < 30000) return;
+  const resolveQueue = [];
+  let resolveActive = 0;
+  let resolveEpoch = 0;
+
+  function loadVideoDetail(id, pageUrl) {
+    if (sponsoredRequests.has(id) || typeof window.fetch !== 'function') return Promise.resolve(false);
+    if (Date.now() - (sponsoredFailures.get(id) || 0) < 30000) return Promise.resolve(false);
+    const detailed = sponsoredDetails.get(id);
+    if (detailed && chromeDownloadable(detailed)) return Promise.resolve(true);
     let url;
-    try { url = new URL(pageUrl, location.origin); } catch (_) { return; }
-    if (url.origin !== location.origin || !new RegExp('/video/' + id + '/?$').test(url.pathname)) return;
+    try { url = new URL(pageUrl, location.origin); } catch (_) { return Promise.resolve(false); }
+    if (url.origin !== location.origin || !new RegExp('/video/' + id + '/?$').test(url.pathname)) return Promise.resolve(false);
     const request = window.fetch(url.href, { credentials: 'same-origin' }).then(async (response) => {
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const html = await response.text();
@@ -38,24 +45,87 @@
       if (text(item?.id) !== id || !makeVideo(item)?.resources.some((resource) => resource.type === 'video')) {
         throw new Error('作品页没有匹配的下载资源');
       }
+      fetchedItems.delete(id);
+      fetchedItems.set(id, item);
+      while (fetchedItems.size > 1000) fetchedItems.delete(fetchedItems.keys().next().value);
+      item.__detailResolved = true;
       sponsoredDetails.set(id, item);
-      while (sponsoredDetails.size > 50) sponsoredDetails.delete(sponsoredDetails.keys().next().value);
+      while (sponsoredDetails.size > 1000) sponsoredDetails.delete(sponsoredDetails.keys().next().value);
       queueEmit();
+      return true;
     }).catch((error) => {
       sponsoredFailures.set(id, Date.now());
-      console.warn('[TikTokDL] 赞助视频作品页解析失败', id, error);
+      console.warn('[TikTokDL] 作品页解析失败', id, error);
+      return false;
     }).finally(() => {
       sponsoredRequests.delete(id);
     });
     sponsoredRequests.set(id, request);
+    return request;
+  }
+
+  function enqueueVideoResolve(videos, epoch) {
+    if (epoch) resolveEpoch = epoch;
+    (Array.isArray(videos) ? videos : []).forEach((video) => {
+      const id = text(video?.id);
+      const pageUrl = text(video?.pageUrl);
+      if (!/^\d{6,}$/.test(id) || !pageUrl) return;
+      if (resolveQueue.some((item) => item.id === id) || sponsoredRequests.has(id)) return;
+      if (sponsoredDetails.has(id) && chromeDownloadable(sponsoredDetails.get(id))) return;
+      resolveQueue.push({ id, pageUrl });
+    });
+    pumpVideoResolve();
+  }
+
+  let resolveIdleTimer = 0;
+  function notifyResolveIdle() {
+    window.postMessage({
+      source: SOURCE,
+      type: 'RESOLVE_IDLE',
+      epoch: resolveEpoch
+    }, location.origin);
+  }
+
+  function scheduleResolveIdle() {
+    clearTimeout(resolveIdleTimer);
+    const epoch = resolveEpoch;
+    resolveIdleTimer = setTimeout(() => {
+      resolveIdleTimer = 0;
+      if (epoch !== resolveEpoch || resolveActive !== 0 || resolveQueue.length) return;
+      notifyResolveIdle();
+    }, 0);
+  }
+
+  function pumpVideoResolve() {
+    while (resolveActive < 2 && resolveQueue.length) {
+      const job = resolveQueue.shift();
+      resolveActive += 1;
+      loadVideoDetail(job.id, job.pageUrl).finally(() => {
+        resolveActive -= 1;
+        pumpVideoResolve();
+      });
+    }
+    if (resolveActive === 0 && !resolveQueue.length) scheduleResolveIdle();
+    else clearTimeout(resolveIdleTimer);
+  }
+
+  function loadSponsoredDetail(id, pageUrl) {
+    enqueueVideoResolve([{ id, pageUrl }]);
   }
 
   function rememberItems(data) {
-    const list = data?.itemList || data?.item_list || data?.aweme_list || data?.items
-      || (data?.itemInfo?.itemStruct ? [data.itemInfo.itemStruct] : data?.itemStruct ? [data.itemStruct] : []);
-    if (!Array.isArray(list)) return;
+    const lists = [];
+    [data, data?.data].forEach((source) => {
+      [source?.itemList, source?.item_list, source?.aweme_list, source?.items,
+        source?.pinnedItemList, source?.pinned_item_list, source?.pinnedItems, source?.pinned_items,
+        source?.pinnedList, source?.pinnedPostList, source?.pinnedVideoList,
+        source?.topItemList, source?.top_item_list].filter(Array.isArray).forEach((list) => lists.push(list));
+      if (source?.itemInfo?.itemStruct) lists.push([source.itemInfo.itemStruct]);
+      if (source?.itemStruct) lists.push([source.itemStruct]);
+    });
+    if (!lists.length) return;
     let added = false;
-    list.slice(0, 100).forEach((value) => {
+    lists.flatMap((list) => list.slice(0, 100)).forEach((value) => {
       const item = itemStruct(value);
       const id = text(item?.id || item?.awemeId || item?.aweme_id || item?.itemId || item?.item_id);
       if (!/^\d{6,}$/.test(id) || !item.video) return;
@@ -63,7 +133,7 @@
       fetchedItems.set(id, item);
       added = true;
     });
-    while (fetchedItems.size > 250) fetchedItems.delete(fetchedItems.keys().next().value);
+    while (fetchedItems.size > 1000) fetchedItems.delete(fetchedItems.keys().next().value);
     if (added) queueEmit();
   }
 
@@ -134,6 +204,18 @@
       return url.protocol === 'https:' ? url.href : '';
     } catch (_) {
       return '';
+    }
+  }
+
+  function isCdnMediaUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:') return false;
+      const host = url.hostname.toLowerCase();
+      if (host === 'tiktok.com' || /^(www|m|vm|vt)\.tiktok\.com$/.test(host)) return false;
+      return /(^|\.)(tiktok\.com|tiktokv\.com|tiktokcdn\.com|tiktokcdn-us\.com|byteoversea\.com|ibytedtos\.com|ttwstatic\.com|muscdn\.com|byteimg\.com|bytecdn\.cn)$/.test(host);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -261,6 +343,10 @@
     return sourceRank(resource?.source) >= 3;
   }
 
+  function chromeDownloadable(item) {
+    return !!makeVideo(item)?.resources.some((resource) => resource.type === 'video' && isDownloadableSource(resource));
+  }
+
   function betterPlayback(candidate, current) {
     const byCodec = playbackRank(candidate) - playbackRank(current);
     if (byCodec !== 0) return byCodec > 0;
@@ -269,12 +355,12 @@
 
   /** Prefer addresses that chrome.downloads can fetch; play-only CDN links often return 没有权限. */
   function betterPrimary(candidate, current) {
-    const candCodec = codecFamily(candidate?.codec);
-    const currCodec = codecFamily(current?.codec);
-    if ((candCodec === 'h264') !== (currCodec === 'h264')) return candCodec === 'h264';
     const candDl = isDownloadableSource(candidate);
     const currDl = isDownloadableSource(current);
     if (candDl !== currDl) return candDl;
+    const candCodec = codecFamily(candidate?.codec);
+    const currCodec = codecFamily(current?.codec);
+    if ((candCodec === 'h264') !== (currCodec === 'h264')) return candCodec === 'h264';
     const candSize = positiveNumber(candidate.sizeBytes) || positiveNumber(candidate.estimatedBytes);
     const currSize = positiveNumber(current.sizeBytes) || positiveNumber(current.estimatedBytes);
     if ((candSize > 0) !== (currSize > 0)) return candSize > 0;
@@ -321,63 +407,66 @@
     return [...videos, ...audios];
   }
 
+  function uniqueUrls(list) {
+    const seen = [];
+    (Array.isArray(list) ? list : []).forEach((url) => {
+      if (url && !seen.includes(url)) seen.push(url);
+    });
+    return seen;
+  }
+
+  function consolidateVideoResources(videos) {
+    if (!videos.length) return [];
+    const downloadable = videos.filter(isDownloadableSource);
+    const playOnly = videos.filter((item) => !isDownloadableSource(item));
+    const ranked = downloadable.length ? downloadable : playOnly;
+    let best = ranked[0];
+    ranked.slice(1).forEach((item) => {
+      if (betterPrimary(item, best)) best = item;
+    });
+    const playUrls = uniqueUrls([
+      ...playOnly.flatMap((item) => [item.url, ...(item.backupUrls || [])]),
+      ...downloadable.flatMap((item) => Array.isArray(item.downloadUrls)
+        ? (item.backupUrls || []).filter((url) => !item.downloadUrls.includes(url)) : [])
+    ]);
+    const playUrlSet = new Set(playUrls);
+    const downloadUrls = uniqueUrls(downloadable.flatMap((item) => Array.isArray(item.downloadUrls)
+      ? item.downloadUrls : [item.url, ...(item.backupUrls || [])]))
+      .filter((url) => !playUrlSet.has(url) || downloadable.some((item) => item.url === url));
+    const primary = downloadUrls[0] || best.url;
+    return [{
+      ...best,
+      url: primary,
+      downloadUrls: downloadUrls.length ? downloadUrls : undefined,
+      backupUrls: uniqueUrls([...downloadUrls.filter((url) => url !== primary), ...playUrls]).slice(0, 12),
+      source: downloadUrls.length ? (isDownloadableSource(best) ? best.source : '页面下载') : best.source,
+      mergedHeights: [...new Set(videos.map((item) => item.height).filter(Boolean))],
+      quality: streamLabel(best)
+    }];
+  }
+
   /** One row per resolution. Extra URLs stay as silent fallbacks. */
   function consolidateResources(resources) {
     if (!Array.isArray(resources) || !resources.length) return [];
+    const videos = resources.filter((item) => item.type === 'video' && item.url);
     const groups = new Map();
-    resources.forEach((resource) => {
-      if (!resource?.url) return;
-      const key = resource.type === 'video' ? 'video' : resource.type + ':' + resource.url;
+    resources.filter((item) => item.type !== 'video' && item.url).forEach((resource) => {
+      const key = resource.type + ':' + resource.url;
       const existing = groups.get(key);
       if (!existing) {
-        groups.set(key, {
-          ...resource,
-          backupUrls: [...(resource.backupUrls || [])],
-          backupRanks: Object.fromEntries((resource.backupUrls || []).map((url) => [url, backupPreference(resource)])),
-          mergedHeights: resource.height ? [resource.height] : []
-        });
+        groups.set(key, { ...resource, backupUrls: [...(resource.backupUrls || [])] });
         return;
       }
-      let primary = existing;
-      let secondary = resource;
-      if (betterPrimary(resource, existing)) {
-        primary = { ...resource, backupUrls: [...(resource.backupUrls || [])], backupRanks: { ...(existing.backupRanks || {}) } };
-        secondary = existing;
-      }
-      const backupRanks = { ...(primary.backupRanks || {}), ...(existing.backupRanks || {}) };
-      const remember = (url, rank) => {
-        if (!url || url === primary.url) return;
-        backupRanks[url] = Math.max(backupRanks[url] || 0, rank);
-      };
-      (primary.backupUrls || []).forEach((url) => remember(url, backupRanks[url] || backupPreference(primary)));
-      remember(secondary.url, backupPreference(secondary));
-      (secondary.backupUrls || []).forEach((url) => remember(url, backupPreference(secondary)));
-      primary.backupUrls = Object.entries(backupRanks)
-        .sort((a, b) => b[1] - a[1])
-        .map(([url]) => url)
+      const backups = uniqueUrls([existing.url, ...(existing.backupUrls || []), resource.url, ...(resource.backupUrls || [])])
+        .filter((url) => url !== existing.url)
         .slice(0, 12);
-      primary.backupRanks = backupRanks;
-      primary.mergedHeights = [...new Set([
-        ...(existing.mergedHeights || []),
-        existing.height || 0,
-        resource.height || 0
-      ].filter(Boolean))];
-      primary.sizeBytes = positiveNumber(primary.sizeBytes);
-      primary.estimatedBytes = positiveNumber(primary.estimatedBytes);
-      primary.bitrate = positiveNumber(primary.bitrate);
-      groups.set(key, primary);
+      groups.set(key, { ...existing, backupUrls: backups });
     });
-    const merged = [...groups.values()].map(({ backupRanks, ...item }) => item);
-    const videos = merged.filter((item) => item.type === 'video').map((item) => ({ ...item, quality: streamLabel(item) })).sort((a, b) => {
-      const pxA = (a.width || 0) * (a.height || 0);
-      const pxB = (b.width || 0) * (b.height || 0);
-      return pxB - pxA || resourceScore(b) - resourceScore(a);
-    });
-    return [...videos, ...merged.filter((item) => item.type !== 'video')];
+    return [...consolidateVideoResources(videos), ...groups.values()];
   }
 
   function addResource(resources, seen, type, raw, width, height, mime, sizeBytes, bitrate, duration, formatHint, codec, source) {
-    const urls = urlList(raw).filter((url) => !seen.has(type + ':' + url));
+    const urls = urlList(raw).filter((url) => isCdnMediaUrl(url) && !seen.has(type + ':' + url));
     if (!urls.length) return;
     urls.forEach((url) => seen.add(type + ':' + url));
     const size = positiveNumber(sizeBytes);
@@ -458,8 +547,14 @@
     addResource(resources, seen, 'audio', [music.playUrl, music.play_url, music.PlayUrl], 0, 0, music.mimeType || music.mime,
       music.size || music.fileSize || music.file_size, music.bitrate || music.bitRate, positiveNumber(music.duration) || duration,
       music.format || music.Format, music.codecType || music.codec, '页面播放');
-    const cover = firstHttps([video.cover, video.originCover, video.dynamicCover, item.cover]);
+    const cover = firstHttps([
+      video.originCover, video.origin_cover, video.OriginCover,
+      item.originCover, item.origin_cover,
+      video.dynamicCover, video.dynamic_cover,
+      video.cover, item.cover
+    ]);
     const pageUrl = author.username ? 'https://www.tiktok.com/@' + encodeURIComponent(author.username) + '/video/' + id : location.origin + '/video/' + id;
+    const pinned = item.isPinned === true || item.isPinnedItem === true || item.is_pinned === true || item.isTop === 1 || item.isTop === true;
     return {
       id,
       pageUrl,
@@ -470,8 +565,37 @@
       duration,
       publishTime: published(item.createTime || item.create_time || item.createTimestamp),
       cover,
+      pinned,
+      detailResolved: item.__detailResolved === true,
       resources: consolidateResources(finalizeVideoResources(resources))
     };
+  }
+
+  function pinnedIdsFromState() {
+    const ids = [];
+    const seen = new Set();
+    function take(list) {
+      if (!Array.isArray(list)) return;
+      list.forEach((value) => {
+        const item = itemStruct(value) || value;
+        const id = text(item?.id || item?.awemeId || item?.aweme_id || item?.itemId || item?.item_id);
+        if (!/^\d{6,}$/.test(id) || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+      });
+    }
+    function walk(value, depth) {
+      if (!value || typeof value !== 'object' || depth > 6) return;
+      if (Array.isArray(value)) return;
+      Object.keys(value).forEach((key) => {
+        const child = value[key];
+        if (/^(pinned|pin)(item|video|post|aweme)?list$|^top_?item_?list$|^pinned_items$/i.test(key) && Array.isArray(child)) take(child);
+        else if (child && typeof child === 'object') walk(child, depth + 1);
+      });
+    }
+    walk(window.__UNIVERSAL_DATA_FOR_REHYDRATION__?.__DEFAULT_SCOPE__, 0);
+    walk(window.SIGI_STATE, 0);
+    return ids;
   }
 
   function collectState() {
@@ -728,6 +852,43 @@
     };
   }
 
+  function imageHttps(node) {
+    if (!node) return '';
+    if (node.tagName === 'IMG') return httpsUrl(node.currentSrc || node.src);
+    const image = node.querySelector?.('img');
+    return httpsUrl(image?.currentSrc || image?.src);
+  }
+
+  function profileAvatarFromState(username) {
+    const scope = window.__UNIVERSAL_DATA_FOR_REHYDRATION__?.__DEFAULT_SCOPE__;
+    if (!scope || typeof scope !== 'object') return '';
+    const expected = String(username || '').toLowerCase();
+    for (const value of Object.values(scope)) {
+      const user = value?.userInfo?.user || value?.userInfo || value?.user;
+      if (!user || typeof user !== 'object' || Array.isArray(user)) continue;
+      const name = text(user.uniqueId || user.unique_id || user.username);
+      if (expected && name && name.toLowerCase() !== expected) continue;
+      const avatar = firstHttps(user.avatarLarger || user.avatarMedium || user.avatarThumb || user.avatar);
+      if (avatar) return avatar;
+    }
+    return '';
+  }
+
+  function profileAvatarFromDom() {
+    const marked = imageHttps(document.querySelector('[data-e2e="user-avatar"]'));
+    if (marked) return marked;
+    const images = document.querySelectorAll('img');
+    for (const image of images) {
+      if (image.closest('#tiktok-dl-root, a[href*="/video/"]')) continue;
+      const src = httpsUrl(image.currentSrc || image.src);
+      if (!src || !/tiktokcdn|byteimg|muscdn|ibyteimg|ttwstatic/i.test(src)) continue;
+      const width = image.naturalWidth || image.width || 0;
+      const height = image.naturalHeight || image.height || 0;
+      if (width >= 48 && height >= 48 && Math.abs(width - height) <= Math.max(width, height) * 0.4) return src;
+    }
+    return '';
+  }
+
   function creatorFromState(items, username) {
     const match = items.find(({ item }) => authorFrom(item).username.toLowerCase() === username.toLowerCase());
     const author = authorFrom(match?.item || items[0]?.item || {});
@@ -736,8 +897,37 @@
       id: author.id,
       username: author.username || username,
       displayName: author.displayName || heading || username,
-      avatar: author.avatar
+      avatar: author.avatar || profileAvatarFromState(username) || profileAvatarFromDom()
     };
+  }
+
+  function rememberRecentVideo(video) {
+    const id = text(video?.id);
+    if (!/^\d{6,}$/.test(id)) return video || null;
+    const previous = recentVideos.get(id) || {};
+    const liveResources = Array.isArray(video?.resources) ? video.resources : [];
+    const liveHasVideo = liveResources.some((item) => item?.type === 'video' && item.url);
+    const previousResources = Array.isArray(previous.resources) ? previous.resources : [];
+    const next = {
+      ...previous,
+      ...video,
+      id,
+      title: text(video?.title) || previous.title || '',
+      cover: text(video?.cover) || previous.cover || '',
+      resources: liveHasVideo ? liveResources : previousResources
+    };
+    recentVideos.delete(id);
+    recentVideos.set(id, next);
+    while (recentVideos.size > 10) recentVideos.delete(recentVideos.keys().next().value);
+    return next;
+  }
+
+  function recentVideo(id) {
+    const video = recentVideos.get(text(id));
+    if (!video) return null;
+    recentVideos.delete(video.id);
+    recentVideos.set(video.id, video);
+    return { ...video, resources: Array.isArray(video.resources) ? video.resources.map((item) => ({ ...item })) : [] };
   }
 
   function snapshot() {
@@ -746,7 +936,7 @@
     if (page.kind === 'video') {
       const selected = items.find(({ video }) => video.id === page.id)?.video;
       const player = currentDomPlayer();
-      const video = withPlayerResource(selected, player, null) || domVideo(page.id, page.username, player) || null;
+      const video = rememberRecentVideo(withPlayerResource(selected, player, null) || domVideo(page.id, page.username, player) || recentVideo(page.id));
       return { kind: 'video', video, creator: creatorFromState(items, page.username), url: location.href };
     }
     if (page.kind === 'photo') {
@@ -754,9 +944,18 @@
     }
     if (page.kind === 'creator') {
       const creator = creatorFromState(items, page.username);
+      const pinnedIds = pinnedIdsFromState();
+      const pinOrder = new Map(pinnedIds.map((id, index) => [id, index]));
       const videos = items.map(({ video }) => video).filter((video) => video.author && (!creator.username || video.pageUrl.includes('/@' + encodeURIComponent(creator.username) + '/')));
+      if (pinnedIds.length) {
+        videos.forEach((video) => {
+          const index = pinOrder.has(video.id) ? pinOrder.get(video.id) : -1;
+          video.pinned = index >= 0;
+          video.pinIndex = index;
+        });
+      }
       const payload = { kind: 'creator', creator, url: location.href };
-      if (videos.length) payload.videos = videos.slice(0, 100);
+      if (videos.length) payload.videos = videos.slice(0, 500);
       return payload;
     }
     const player = currentDomPlayer();
@@ -768,13 +967,13 @@
     if (context.sponsored && context.id && !sponsoredDetails.has(context.id)) {
       const pageUrl = selected?.video?.pageUrl || (context.username ? location.origin + '/@' + encodeURIComponent(context.username) + '/video/' + context.id : '');
       if (pageUrl) loadSponsoredDetail(context.id, pageUrl);
-      const pendingVideo = selected?.video || (context.id ? domVideo(context.id, context.username, player) : null);
+      const pendingVideo = selected?.video || (context.id ? domVideo(context.id, context.username, player) : null) || recentVideo(context.id);
       if (!pendingVideo) return { kind: 'feed', reason: 'no-matching-item', activeId: context.id, url: location.href };
-      return { kind: 'video', video: { ...pendingVideo, resources: [] }, creator: creatorFromState(items, context.username), url: location.href };
+      return { kind: 'video', video: rememberRecentVideo({ ...pendingVideo, resources: [] }), creator: creatorFromState(items, context.username), url: location.href };
     }
-    const video = context.sponsored
-      ? selected?.video || null
-      : withPlayerResource(selected?.video, player, context) || (context.id ? domVideo(context.id, context.username, player) : null);
+    const video = rememberRecentVideo(context.sponsored
+      ? selected?.video || recentVideo(context.id)
+      : withPlayerResource(selected?.video, player, context) || (context.id ? domVideo(context.id, context.username, player) : null) || recentVideo(context.id));
     if (!video) return { kind: 'feed', reason: 'no-matching-item', activeId: context.id, url: location.href };
     const item = selected?.item;
     const author = authorFrom(item || {});
@@ -828,8 +1027,14 @@
   }
 
   window.addEventListener('message', (event) => {
-    if (event.source !== window || event.origin !== location.origin || event.data?.source !== CONTENT_SOURCE || event.data?.type !== 'GET_SNAPSHOT') return;
-    emit(true);
+    if (event.source !== window || event.origin !== location.origin || event.data?.source !== CONTENT_SOURCE) return;
+    if (event.data.type === 'GET_SNAPSHOT') emit(true);
+    if (event.data.type === 'RESTORE_VIDEOS') {
+      const videos = Array.isArray(event.data.videos) ? event.data.videos : [];
+      videos.slice().reverse().forEach((video) => rememberRecentVideo(video));
+      queueEmit();
+    }
+    if (event.data.type === 'RESOLVE_VIDEOS') enqueueVideoResolve(event.data.videos, event.data.epoch);
   });
   new MutationObserver((mutations) => {
     if (mutations.some((mutation) => !mutation.target?.closest?.('#tiktok-dl-root'))) queueEmit();

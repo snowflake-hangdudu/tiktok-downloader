@@ -66,6 +66,10 @@
       videoWord: '视频',
       pauseAll: '暂停全部',
       cancelWaiting: '取消等待',
+      cancelAll: '全部取消',
+      queueMore: '队列共 {count} 条，其余在等待',
+      resourcePending: '有 {count} 个视频暂无可用下载地址，未计入列表',
+      noDownloadableVideos: '已发现作品，但暂无可用下载地址；这些作品未计入列表',
       waitVideo: '等待识别 TikTok 视频',
       waitVideoDetail: '播放或打开视频详情页后，这里会显示可下载资源。',
       creatorPage: '当前是创作者主页',
@@ -160,6 +164,8 @@
       skippedDownloaded: '跳过已下载 {count} 个',
       missingResource: '缺少可用资源 {count} 个',
       queueDeduped: '队列去重 {count} 个',
+      alreadyInQueueCount: '已有 {count} 个视频正在队列中',
+      invalidDownloadCount: '有 {count} 个视频的下载地址不可用，请重新扫描',
       noNewTasks: '没有新增任务',
       historyCleared: '下载历史已清空。',
       downloadTask: '下载任务',
@@ -191,6 +197,11 @@
       selectAllResults: '全选当前结果',
       selectUndownloaded: '只选未下载',
       deselect: '取消选择',
+      selectAllShort: '全选',
+      selectNewShort: '仅未下载',
+      clearShort: '清空',
+      rescan: '重新扫描',
+      listVideoCount: '{count} 个视频',
       selectedCount: '已选择 {count} 个视频',
       addToQueue: '加入下载队列',
       videoCount: ' · {count} 个视频',
@@ -354,6 +365,10 @@
       videoWord: 'Video',
       pauseAll: 'Pause all',
       cancelWaiting: 'Cancel waiting',
+      cancelAll: 'Cancel all',
+      queueMore: '{count} in queue, showing the current one',
+      resourcePending: '{count} videos have no available download link and are excluded from the list',
+      noDownloadableVideos: 'Posts were found, but none have an available download link yet',
       waitVideo: 'Waiting for a TikTok video',
       waitVideoDetail: 'Play a video or open its page to see what can be saved.',
       creatorPage: 'This is a creator page',
@@ -448,6 +463,8 @@
       skippedDownloaded: 'Skipped {count} already saved',
       missingResource: '{count} missing resources',
       queueDeduped: 'Deduped {count} from queue',
+      alreadyInQueueCount: '{count} videos are already in the queue',
+      invalidDownloadCount: '{count} download addresses are unavailable; scan again',
       noNewTasks: 'No new tasks',
       historyCleared: 'Download history cleared.',
       downloadTask: 'Download',
@@ -479,6 +496,11 @@
       selectAllResults: 'Select all results',
       selectUndownloaded: 'Select not downloaded',
       deselect: 'Clear selection',
+      selectAllShort: 'All',
+      selectNewShort: 'Not saved',
+      clearShort: 'Clear',
+      rescan: 'Rescan',
+      listVideoCount: '{count} videos',
       selectedCount: '{count} selected',
       addToQueue: 'Add to queue',
       videoCount: ' · {count} videos',
@@ -581,7 +603,7 @@
   };
 
   let preference = 'auto';
-  let language = 'zh-CN';
+  let language = 'en';
   const listeners = new Set();
 
   function api() {
@@ -636,7 +658,7 @@
   }
 
   function t(key, values) {
-    const template = messages[language]?.[key] ?? messages['zh-CN']?.[key] ?? key;
+    const template = messages[language]?.[key] ?? messages.en?.[key] ?? messages['zh-CN']?.[key] ?? key;
     return String(template).replace(/\{(\w+)\}/g, (_, name) => String(values?.[name] ?? ''));
   }
 

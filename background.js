@@ -1,4 +1,6 @@
-importScripts('shared/runtime.js', 'shared/i18n.js', 'shared/remote-content.js', 'shared/config-handler.js');
+if (typeof importScripts === 'function') {
+  importScripts('shared/runtime.js', 'shared/i18n.js', 'shared/remote-content.js', 'shared/config-handler.js');
+}
 
 // The queue is deliberately self-contained: service workers can stop at any time,
 // so the storage copy is always the source of truth.
@@ -109,9 +111,60 @@ function allowedMediaUrl(value) {
     const url = new URL(String(value || ''));
     if (url.protocol !== 'https:') return false;
     const host = url.hostname.toLowerCase();
+    if (host === 'tiktok.com' || /^(www|m|vm|vt)\.tiktok\.com$/.test(host)) return false;
     return /(^|\.)(tiktok\.com|tiktokv\.com|tiktokcdn\.com|tiktokcdn-us\.com|byteoversea\.com|ibytedtos\.com|ttwstatic\.com|muscdn\.com|byteimg\.com|bytecdn\.cn)$/.test(host);
   } catch (_) {
     return false;
+  }
+}
+
+function looksLikeHtmlDump(item) {
+  const filename = String(item?.filename || '');
+  const mime = String(item?.mime || '');
+  return /\.(?:html?|json|xml|txt)$/i.test(filename) || /^(?:text\/|application\/(?:json|xml))/i.test(mime);
+}
+
+function invalidCompletedMedia(task, item) {
+  if (!item || looksLikeHtmlDump(item) || item.exists === false) return true;
+  if (task.type === 'cover') return false;
+  return Math.max(Number(item.bytesReceived) || 0, Number(item.totalBytes) || 0) < 1024;
+}
+
+async function probeMediaAddress(task) {
+  if (!task.validateMedia || task.type !== 'video' || typeof fetch !== 'function') return true;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 10000) : null;
+  try {
+    const response = await fetch(task.url, {
+      method: 'GET', headers: { Range: 'bytes=0-31' }, credentials: 'include', cache: 'no-store',
+      ...(controller ? { signal: controller.signal } : {})
+    });
+    if (!response.ok || /^(?:text\/|application\/(?:json|xml))/i.test(response.headers?.get('content-type') || '')) return false;
+    let bytes;
+    if (response.body?.getReader) {
+      const reader = response.body.getReader();
+      const parts = [];
+      let length = 0;
+      try {
+        while (length < 12) {
+          const part = await reader.read();
+          if (part.done) break;
+          parts.push(part.value);
+          length += part.value.length;
+        }
+        bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const part of parts) { bytes.set(part, offset); offset += part.length; }
+      } finally { await reader.cancel().catch(() => {}); }
+    } else {
+      bytes = new Uint8Array(await response.arrayBuffer());
+    }
+    return !!bytes && bytes.length >= 12 && String.fromCharCode(...bytes.slice(4, 8)) === 'ftyp';
+  } catch (error) {
+    debugLog('下载地址预检失败', String(error?.message || error));
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -142,24 +195,34 @@ function nativeOutcome(item, delta) {
   return '';
 }
 
+function ownedDownload(item) {
+  // Firefox may omit byExtensionId. The download ID is already bound to one
+  // of our persisted tasks; only reject an explicit different extension ID.
+  return !!item && (!item.byExtensionId || item.byExtensionId === EXT.runtime.id);
+}
+
 async function syncActiveDownloads(state) {
   let terminal = false;
   for (const task of state.tasks) {
     if (!ACTIVE.has(task.status) || !Number.isInteger(task.downloadId)) continue;
     const item = (await DownloaderKit.runtime.invoke(EXT.downloads.search, EXT.downloads, [{ id: task.downloadId }]).catch(() => []))[0];
-    if (!item || item.byExtensionId !== EXT.runtime.id) continue;
+    if (!ownedDownload(item)) continue;
     const outcome = nativeOutcome(item, null);
+    if (item.paused || task.status === 'paused') {
+      task.status = 'paused';
+      continue;
+    }
     if (!outcome && task.status !== 'downloading') continue;
     task.bytesReceived = item.bytesReceived || 0;
     task.totalBytes = item.totalBytes || 0;
     task.progress = task.totalBytes > 0 ? Math.min(100, Math.round(task.bytesReceived * 100 / task.totalBytes)) : (task.progress || 0);
-    if (outcome === 'complete') {
+    if (outcome === 'complete' && !invalidCompletedMedia(task, item)) {
       task.status = 'completed';
       task.progress = 100;
       task.updatedAt = now();
       state.history = appendHistory(state.history, task, 'completed');
       terminal = true;
-    } else if (outcome === 'interrupted' && task.status === 'downloading') {
+    } else if ((outcome === 'interrupted' || outcome === 'complete') && task.status === 'downloading') {
       const failedId = task.downloadId;
       const switched = item.error !== 'USER_CANCELED' && nextDownloadAddress(task);
       if (switched) await discardFailedDownload(failedId);
@@ -167,7 +230,10 @@ async function syncActiveDownloads(state) {
         task.status = item.error === 'USER_CANCELED' ? 'cancelled' : 'failed';
         task.error = item.error || await t('downloadInterrupted');
         task.updatedAt = now();
-        if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
+        if (task.status === 'failed') {
+          state.history = appendHistory(state.history, task, 'failed', task.error);
+          await discardFailedDownload(failedId);
+        }
       }
       terminal = true;
     }
@@ -203,8 +269,17 @@ function appendHistory(history, task, status, error) {
   return history.slice(0, 1000);
 }
 
-function cap(settings) {
-  return Math.min(3, Math.max(1, Number.parseInt(settings.maxConcurrentDownloads, 10) || 2));
+function cap() {
+  return 1;
+}
+
+function migrateTaskQueues(tasks) {
+  const missing = (Array.isArray(tasks) ? tasks : []).filter((task) => task.queue !== 'video' && task.queue !== 'creator');
+  if (!missing.length) return false;
+  const activeMissing = missing.filter((task) => ACTIVE.has(task.status));
+  const fallback = activeMissing.length > 1 ? 'creator' : 'video';
+  missing.forEach((task) => { task.queue = fallback; });
+  return true;
 }
 
 function normalizeTask(input) {
@@ -231,6 +306,8 @@ function normalizeTask(input) {
     format: text(input?.format, 30),
     filename: safeFilename(input?.filename, { ...input, type }),
     coverUrl: text(input?.coverUrl, 4000),
+    queue: input?.queue === 'creator' ? 'creator' : 'video',
+    validateMedia: input?.validateMedia === true,
     recordHistory: input?.recordHistory !== false,
     status: 'waiting',
     progress: 0,
@@ -306,6 +383,19 @@ async function schedule() {
       await save({ tasks: state.tasks }); // Persist before downloads.download so an MV3 restart can recover it.
       notify();
       try {
+        if (!await probeMediaAddress(task)) {
+          debugLog('跳过无权限或非 MP4 地址', briefUrl(task.url));
+          if (!nextDownloadAddress(task)) {
+            task.status = 'failed';
+            task.error = '下载地址没有返回 MP4 视频';
+            task.updatedAt = now();
+            state.history = appendHistory(state.history, task, 'failed', task.error);
+          }
+          await save({ tasks: state.tasks, history: state.history });
+          notify(task.status === 'waiting' ? 'tasks' : 'terminal');
+          state = await stored();
+          continue;
+        }
         task.downloadId = await DownloaderKit.runtime.invoke(EXT.downloads.download, EXT.downloads, [{
           url: task.url,
           filename: safeFilename(task.filename, task),
@@ -319,7 +409,7 @@ async function schedule() {
         // Its onChanged callback is serialized behind this scheduler, so inspect
         // the native state now instead of depending on event timing.
         const native = (await DownloaderKit.runtime.invoke(EXT.downloads.search, EXT.downloads, [{ id: task.downloadId }]).catch(() => []))[0];
-        if (native?.byExtensionId === EXT.runtime.id && native.state === 'complete') {
+        if (ownedDownload(native) && native.state === 'complete' && !invalidCompletedMedia(task, native)) {
           task.status = 'completed';
           task.progress = 100;
           task.bytesReceived = native.bytesReceived || 0;
@@ -328,7 +418,8 @@ async function schedule() {
           state.history = appendHistory(state.history, task, 'completed');
           await save({ tasks: state.tasks, history: state.history });
           notify('terminal');
-        } else if (native?.byExtensionId === EXT.runtime.id && native.state === 'interrupted') {
+        } else if (ownedDownload(native) && (native.state === 'interrupted'
+          || (native.state === 'complete' && invalidCompletedMedia(task, native)))) {
           const failedId = task.downloadId;
           debugLog('下载中断', (native.error || '未知') + ' ' + briefUrl(task.url));
           const switched = native.error !== 'USER_CANCELED' && nextDownloadAddress(task);
@@ -340,7 +431,10 @@ async function schedule() {
             task.status = native.error === 'USER_CANCELED' ? 'cancelled' : 'failed';
             task.error = native.error || await t('downloadInterrupted');
             task.updatedAt = now();
-            if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
+            if (task.status === 'failed') {
+              state.history = appendHistory(state.history, task, 'failed', task.error);
+              await discardFailedDownload(failedId);
+            }
           }
           await save({ tasks: state.tasks, history: state.history });
           notify(task.status === 'waiting' ? 'tasks' : 'terminal');
@@ -382,15 +476,31 @@ async function reconcile() {
     }
     const found = await DownloaderKit.runtime.invoke(EXT.downloads.search, EXT.downloads, [{ id: task.downloadId }]).catch(() => []);
     const item = found[0];
-    if (!item || item.byExtensionId !== EXT.runtime.id) {
+    if (!ownedDownload(item)) {
       if (task.status === 'downloading') { task.status = 'waiting'; task.downloadId = null; task.updatedAt = now(); changed = true; }
       continue;
     }
     task.bytesReceived = item.bytesReceived || 0;
     task.totalBytes = item.totalBytes || 0;
-    if (item.state === 'complete') {
+    if (item.state === 'complete' && !invalidCompletedMedia(task, item)) {
       task.status = 'completed'; task.updatedAt = now();
       state.history = appendHistory(state.history, task, 'completed'); changed = true;
+    } else if (item.state === 'complete' && invalidCompletedMedia(task, item)) {
+      const failedId = task.downloadId;
+      debugLog('下载到的是网页而不是视频', briefUrl(task.url));
+      const switched = nextDownloadAddress(task);
+      if (switched) await discardFailedDownload(failedId);
+      else {
+        task.status = 'failed';
+        task.error = await t('downloadInterrupted');
+        task.updatedAt = now();
+        state.history = appendHistory(state.history, task, 'failed', task.error);
+        await discardFailedDownload(failedId);
+      }
+      changed = true;
+    } else if (item.paused || task.status === 'paused') {
+      task.status = 'paused';
+      changed = true;
     } else if (item.state === 'interrupted') {
       const failedId = task.downloadId;
       const switched = task.status === 'downloading' && item.error !== 'USER_CANCELED' && nextDownloadAddress(task);
@@ -398,7 +508,10 @@ async function reconcile() {
       else {
         task.status = item.error === 'USER_CANCELED' ? 'cancelled' : 'failed';
         task.error = item.error || await t('downloadInterrupted'); task.updatedAt = now();
-        if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
+        if (task.status === 'failed') {
+          state.history = appendHistory(state.history, task, 'failed', task.error);
+          await discardFailedDownload(failedId);
+        }
       }
       changed = true;
     } else if (task.status === 'downloading') changed = true;
@@ -443,7 +556,7 @@ EXT.downloads.onChanged.addListener((delta) => {
     const task = state.tasks.find((item) => item.downloadId === delta.id);
     if (!task || FINISHED.has(task.status)) return;
     const item = (await DownloaderKit.runtime.invoke(EXT.downloads.search, EXT.downloads, [{ id: delta.id }]).catch(() => []))[0];
-    if (item && item.byExtensionId !== EXT.runtime.id) return;
+    if (item && !ownedDownload(item)) return;
     if (!item && !delta.state) return;
     if (item) {
       task.bytesReceived = item.bytesReceived || task.bytesReceived || 0;
@@ -453,10 +566,28 @@ EXT.downloads.onChanged.addListener((delta) => {
     const outcome = nativeOutcome(item, delta);
     let terminal = false;
     let alternate = false;
-    if (outcome === 'complete') {
+    if (outcome === 'complete' && !invalidCompletedMedia(task, item)) {
       task.status = 'completed'; task.progress = 100;
       state.history = appendHistory(state.history, task, 'completed');
       terminal = true;
+    } else if (outcome === 'complete' && invalidCompletedMedia(task, item)) {
+      const failedId = task.downloadId;
+      debugLog('下载到的是网页而不是视频', briefUrl(task.url));
+      alternate = task.status === 'downloading' && nextDownloadAddress(task);
+      if (alternate) await discardFailedDownload(failedId);
+      else {
+        task.status = 'failed';
+        task.error = await t('downloadInterrupted');
+        state.history = appendHistory(state.history, task, 'failed', task.error);
+        await discardFailedDownload(failedId);
+        terminal = true;
+      }
+    } else if (outcome === 'interrupted' && (item?.error === 'USER_CANCELED' || task.status === 'cancelled')) {
+      task.status = 'cancelled';
+      task.error = '';
+      terminal = true;
+    } else if (item?.paused || task.status === 'paused') {
+      task.status = 'paused';
     } else if (outcome === 'interrupted') {
       const failedId = task.downloadId;
       const errorCode = item?.error || '';
@@ -469,7 +600,10 @@ EXT.downloads.onChanged.addListener((delta) => {
       else {
         task.status = errorCode === 'USER_CANCELED' || task.status === 'cancelled' ? 'cancelled' : 'failed';
         task.error = errorCode || await t('downloadInterrupted');
-        if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
+        if (task.status === 'failed') {
+          state.history = appendHistory(state.history, task, 'failed', task.error);
+          await discardFailedDownload(failedId);
+        }
         terminal = true;
       }
     }
@@ -483,8 +617,15 @@ EXT.downloads.onChanged.addListener((delta) => {
 async function control(state, id, action) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) throw new Error(await t('taskNotFound'));
-  if (action === 'pause' && task.status === 'downloading') {
-    if (Number.isInteger(task.downloadId)) await DownloaderKit.runtime.invoke(EXT.downloads.pause, EXT.downloads, [task.downloadId]);
+  if (action === 'pause' && (task.status === 'downloading' || task.status === 'waiting')) {
+    if (task.status === 'downloading' && Number.isInteger(task.downloadId)) {
+      try {
+        await DownloaderKit.runtime.invoke(EXT.downloads.pause, EXT.downloads, [task.downloadId]);
+      } catch (_) {
+        await DownloaderKit.runtime.invoke(EXT.downloads.cancel, EXT.downloads, [task.downloadId]).catch(() => {});
+        task.downloadId = null;
+      }
+    }
     task.status = 'paused';
   } else if (action === 'resume' && task.status === 'paused') {
     if (Number.isInteger(task.downloadId)) {
@@ -520,10 +661,11 @@ EXT.runtime.onMessage.addListener((message, _sender, respond) => {
   serial(async () => {
     const state = await stored();
     if (type === 'TIKTOK_DL_QUEUE_LIST') {
+      const migrated = migrateTaskQueues(state.tasks);
       const finished = await syncActiveDownloads(state);
-      if (finished) {
+      if (finished || migrated) {
         await save({ tasks: state.tasks, history: state.history });
-        notify('terminal');
+        if (finished) notify('terminal');
       }
       requestSchedule();
       return { ok: true, tasks: state.tasks };
@@ -556,20 +698,20 @@ EXT.runtime.onMessage.addListener((message, _sender, respond) => {
       notify(scope === 'history' || scope === 'all' ? 'history' : 'tasks'); return { ok: true };
     }
     if (type === 'TIKTOK_DL_QUEUE_ADD') {
-      let added = 0; let skipped = 0;
+      let added = 0; let skipped = 0; let duplicateCount = 0; let invalidCount = 0;
       for (const input of Array.isArray(message.tasks) ? message.tasks : []) {
         const task = normalizeTask(input);
-        const duplicate = state.tasks.some((item) => item.id === task.id) || (!input?.forceDuplicate && (
-          state.tasks.some((item) => !FINISHED.has(item.status) && item.videoId && item.videoId === task.videoId && item.type === task.type) ||
-          state.history.some((item) => item.status === 'completed' && item.videoId && item.videoId === task.videoId && item.type === task.type)
-        ));
-        if (!task.videoId || !allowedMediaUrl(task.url) || duplicate) { skipped += 1; continue; }
+        const duplicate = state.tasks.some((item) => item.id === task.id)
+          || state.tasks.some((item) => !FINISHED.has(item.status) && item.videoId && item.videoId === task.videoId && item.type === task.type)
+          || (!input?.forceDuplicate && state.history.some((item) => item.status === 'completed' && item.videoId && item.videoId === task.videoId && item.type === task.type));
+        if (!task.videoId || !allowedMediaUrl(task.url)) { skipped += 1; invalidCount += 1; continue; }
+        if (duplicate) { skipped += 1; duplicateCount += 1; continue; }
         state.tasks.push(task); added += 1;
       }
       await save({ tasks: state.tasks }); notify();
       // Scheduling follows persistence, and remains serialized with message changes.
       requestSchedule();
-      return { ok: true, added, skipped, tasks: state.tasks };
+      return { ok: true, added, skipped, duplicateCount, invalidCount, tasks: state.tasks };
     }
     if (type === 'TIKTOK_DL_QUEUE_CONTROL') {
       const task = await control(state, text(message.id, 160), message.action);
@@ -591,11 +733,15 @@ EXT.runtime.onMessage.addListener((message, _sender, respond) => {
     }
     if (type === 'TIKTOK_DL_QUEUE_BULK') {
       const action = message.action;
-      if (!['pause-all', 'resume-all', 'cancel-waiting', 'retry-failed', 'clear-completed'].includes(action)) throw new Error(await t('invalidBulkAction'));
+      if (!['pause-all', 'resume-all', 'cancel-waiting', 'cancel-all', 'retry-failed', 'clear-completed'].includes(action)) throw new Error(await t('invalidBulkAction'));
+      migrateTaskQueues(state.tasks);
+      const scope = message.queue === 'creator' || message.queue === 'video' ? message.queue : '';
       for (const task of [...state.tasks]) {
-        if (action === 'pause-all' && task.status === 'downloading') await control(state, task.id, 'pause');
+        if (scope && task.queue !== scope) continue;
+        if (action === 'pause-all' && (task.status === 'downloading' || task.status === 'waiting')) await control(state, task.id, 'pause');
         if (action === 'resume-all' && task.status === 'paused') await control(state, task.id, 'resume');
         if (action === 'cancel-waiting' && task.status === 'waiting') await control(state, task.id, 'cancel');
+        if (action === 'cancel-all' && !FINISHED.has(task.status)) await control(state, task.id, 'cancel');
         if (action === 'retry-failed' && task.status === 'failed') await control(state, task.id, 'retry');
       }
       if (action === 'clear-completed') state.tasks = state.tasks.filter((task) => task.status !== 'completed');

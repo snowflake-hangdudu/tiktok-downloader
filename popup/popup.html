@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="../shared/design-system.css">
 </head>
-<body data-theme="tiktok">
+<body data-theme="tiktok" data-kit="tiktok">
   <div class="popup">
     <header class="popup-header">
       <img src="../icons/icon48.png" width="30" height="30" alt="" class="popup-icon">
       <div class="popup-header-text">
-        <h1 id="app-title" data-i18n="appTitleFull">TikTok 视频下载助手</h1>
+        <h1 id="app-title" data-i18n="appTitleFull">TikTok Video Downloader</h1>
         <span id="app-version" class="popup-version"></span>
       </div>
     </header>
@@ -19,7 +19,7 @@
       <div id="state-loading">
         <div class="popup-detect loading">
           <span class="popup-dot pulse"></span>
-          <span data-i18n="identifying">正在识别页面…</span>
+          <span data-i18n="identifying">Reading this page…</span>
         </div>
         <div class="popup-video-card is-loading">
           <div class="popup-cover-wrap">
@@ -34,9 +34,9 @@
           </div>
         </div>
         <div class="popup-section">
-          <div class="popup-section-head" data-i18n="availableQuality">可用清晰度</div>
+          <div class="popup-section-head" data-i18n="availableQuality">Available quality</div>
           <div class="popup-quality-tags">
-            <span class="popup-q-tag loading popup-shimmer w1" data-i18n="loading">加载中</span>
+            <span class="popup-q-tag loading popup-shimmer w1" data-i18n="loading">Loading</span>
             <span class="popup-q-tag loading popup-shimmer w2"></span>
             <span class="popup-q-tag loading popup-shimmer w3"></span>
           </div>
@@ -58,12 +58,12 @@
           </div>
         </div>
         <div class="popup-section">
-          <div class="popup-section-head" data-i18n="availableQuality">可用清晰度</div>
+          <div class="popup-section-head" data-i18n="availableQuality">Available quality</div>
           <div id="quality-tags" class="popup-quality-tags"></div>
         </div>
         <button id="btn-open-panel" type="button" class="popup-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-          <span data-i18n="openPanel">打开下载面板</span>
+          <span data-i18n="openPanel">Open download panel</span>
         </button>
       </div>
 
@@ -94,10 +94,10 @@
           <span id="error-text" data-i18n="loadFailed">Couldn’t load</span>
         </div>
         <div class="popup-empty-hero compact">
-          <p id="error-title" class="popup-empty-title" data-i18n="errorTitle">暂时无法读取页面信息</p>
-          <p id="error-hint" class="popup-error-hint" data-i18n="errorHint">请在内容页按 F5 刷新后，再点击扩展图标。</p>
+          <p id="error-title" class="popup-empty-title" data-i18n="errorTitle">Can’t read this TikTok page yet</p>
+          <p id="error-hint" class="popup-error-hint" data-i18n="errorHint">Refresh the TikTok page, then click the extension icon again.</p>
         </div>
-        <button id="btn-retry" type="button" class="popup-btn popup-btn-outline" data-i18n="retry">刷新并重试</button>
+        <button id="btn-retry" type="button" class="popup-btn popup-btn-outline" data-i18n="retry">Refresh and retry</button>
       </div>
     </main>
     <footer class="popup-footer">
@@ -108,7 +108,7 @@
       </nav>
       <div class="popup-footer-line">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span data-i18n="disclaimer">仅供个人学习 · 请遵守 TikTok 使用条款</span>
+        <span data-i18n="disclaimer">For personal learning only. Follow TikTok’s terms.</span>
       </div>
     </footer>
   </div>

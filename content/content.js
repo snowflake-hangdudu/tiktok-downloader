@@ -4,10 +4,13 @@
   const EXT = DownloaderKit.runtime.getApi();
   const PREFS_KEY = 'tiktok-dl-settings-v1';
   const CREATOR_KEY = 'tiktok-dl-creators-v1';
+  const CREATOR_CACHE_LIMIT = 3;
+  const VIDEO_CACHE_KEY = 'tiktok-dl-videos-v1';
+  const VIDEO_CACHE_LIMIT = 10;
   const DEFAULT_PREFS = {
     defaultQuality: 'highest',
     defaultFormat: 'mp4',
-    maxConcurrentDownloads: 2,
+    maxConcurrentDownloads: 1,
     filenameTemplate: '{title} - {author}',
     skipDownloaded: true,
     recordHistory: true,
@@ -40,9 +43,6 @@
   let creatorRows = null;
   let creatorStats = null;
   let creatorSelectionStatus = null;
-  let creatorSearch = '';
-  let creatorStatusFilter = 'all';
-  let creatorDateFilter = 'all';
   let historySearch = '';
   let historyRange = 'all';
   let route = location.href;
@@ -51,11 +51,11 @@
   let pageAgentVersion = 0;
   let settingsBody = null;
 
-  const shell = DownloaderKit.shell.mount({
-    title: 'TikTok 下载助手',
+    const shell = DownloaderKit.shell.mount({
+    title: 'TikTok Downloader',
     idPrefix: 'tiktok-dl',
     theme: 'tiktok',
-    initialTheme: 'tokyo-love',
+    initialTheme: 'default',
     themeKey: 'tiktok-dl-theme-v1',
     settingsKey: 'tiktok-dl-filename-v1',
     showDebug: false,
@@ -72,27 +72,27 @@
       faqUrl: 'https://snowflake-hangdudu.github.io/tiktok-downloader/faq.html',
       privacyUrl: 'https://snowflake-hangdudu.github.io/tiktok-downloader/',
       email: 'hangdudu0@agent.qq.com',
-      subject: 'TikTok 下载助手反馈'
+      subject: 'TikTok Downloader feedback'
     },
     onFillSettings: fillSettingsSheet,
     onFeedback: copyFeedbackEmail,
     defaults: {
       notice: {
         enabled: false,
-        title: '公告',
-        pinned: ['仅保存你在 TikTok 页面中可正常访问、且有权保存的公开内容。'],
-        recent: ['下载失败会自动更换备用地址。没有独立音频时，不显示音频选项。'],
-        knownIssues: ['部分视频地址会返回没有权限，扩展会自动改用备用地址后再下载。'],
+        title: 'Notice',
+        pinned: ['Only save public TikTok content you can access and are allowed to keep.'],
+        recent: ['Failed downloads retry a backup address. Audio is hidden when no separate track is found.'],
+        knownIssues: ['Some video URLs return no permission. The extension switches to a backup address and retries.'],
         roadmap: {
-          feedback: ['遇到问题请点底部「反馈」，复制邮箱后附上视频链接和截图。'],
+          feedback: ['If something fails, tap Feedback, copy the email, and include the video link and a screenshot.'],
           upcoming: [],
           planned: []
         }
       },
       coop: {
         enabled: true,
-        title: '开发合作',
-        body: '接浏览器插件定制开发。\n\n有合作意向请联系 QQ：748604487\n邮箱：hangdudu0@agent.qq.com\n请备注「插件开发」，并简单说明需求。'
+        title: 'Custom plugin work',
+        body: 'Custom browser extension development.\n\nContact QQ: 748604487\nEmail: hangdudu0@agent.qq.com\nPlease mention “plugin development” and a short description of the request.'
       },
       rating: { enabled: false, url: '', edge: '', chrome: '', firefox: '', minSuccess: 3 }
     },
@@ -105,9 +105,9 @@
   const ui = document.createElement('div');
   ui.className = 'tk-dl';
   ui.innerHTML = `
-    <div class="tk-dl-mode-tabs hidden" role="tablist" data-i18n-aria="modeLabel" aria-label="下载模式">
-      <button type="button" data-mode="video" class="active" role="tab" aria-selected="true" data-i18n="singleVideo">单视频</button>
-      <button type="button" data-mode="creator" role="tab" aria-selected="false" data-i18n="creator">创作者</button>
+    <div class="tk-dl-mode-tabs hidden" role="tablist" data-i18n-aria="modeLabel" aria-label="Download mode">
+      <button type="button" data-mode="video" class="active" role="tab" aria-selected="true" data-i18n="singleVideo">Video</button>
+      <button type="button" data-mode="creator" role="tab" aria-selected="false" data-i18n="creator">Creator</button>
     </div>
     <div class="tk-dl-video-body">
       <div class="tk-dl-video-card is-loading">
@@ -119,64 +119,66 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             </div>
           </div>
-          <button type="button" class="tk-dl-cover-download" disabled data-i18n="coverDownload">下载封面</button>
+          <button type="button" class="tk-dl-cover-download" disabled data-i18n="coverDownload">Save cover</button>
         </div>
-        <div class="tk-dl-video-meta">
-          <div class="tk-dl-video-sk">
-            <span class="tk-dl-sk-line"></span>
-            <span class="tk-dl-sk-line short"></span>
-            <span class="tk-dl-sk-line shorter"></span>
+        <div class="tk-dl-video-side">
+          <div class="tk-dl-video-meta">
+            <div class="tk-dl-video-sk">
+              <span class="tk-dl-sk-line"></span>
+              <span class="tk-dl-sk-line short"></span>
+              <span class="tk-dl-sk-line shorter"></span>
+            </div>
+            <div class="tk-dl-video-content hidden">
+              <div class="tk-dl-video-title"></div>
+              <div class="tk-dl-video-author hidden"></div>
+              <div class="tk-dl-video-sub"></div>
+            </div>
           </div>
-          <div class="tk-dl-video-content hidden">
-            <div class="tk-dl-video-title"></div>
-            <div class="tk-dl-video-author hidden"></div>
-            <div class="tk-dl-video-sub"></div>
+          <div class="tk-dl-options-row">
+            <div class="tk-dl-section tk-dl-quality-section">
+              <div class="tk-dl-section-head">
+                <span data-i18n="quality">Quality</span>
+              </div>
+              <div class="tk-dl-quality-pills"><span class="tk-dl-pill loading" data-i18n="loading">Loading</span></div>
+            </div>
+            <div class="tk-dl-format-row tk-dl-section">
+              <div class="tk-dl-section-head tk-dl-format-label" data-i18n="format">Format</div>
+              <div class="tk-dl-format-pills">
+                <button type="button" class="tk-dl-pill active" data-format="mp4" aria-pressed="true" data-i18n="mp4">MP4 video</button>
+                <button type="button" class="tk-dl-pill hidden" data-format="m4a" aria-pressed="false" data-i18n="m4a">M4A audio</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="tk-dl-options-row">
-        <div class="tk-dl-section tk-dl-quality-section">
-          <div class="tk-dl-section-head">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-            <span data-i18n="quality">清晰度</span>
-          </div>
-          <div class="tk-dl-quality-pills"><span class="tk-dl-pill loading" data-i18n="loading">加载中</span></div>
-        </div>
-        <div class="tk-dl-format-row tk-dl-section">
-          <div class="tk-dl-section-head tk-dl-format-label" data-i18n="format">格式</div>
-          <div class="tk-dl-format-pills">
-            <button type="button" class="tk-dl-pill active" data-format="mp4" aria-pressed="true" data-i18n="mp4">MP4 视频</button>
-            <button type="button" class="tk-dl-pill hidden" data-format="m4a" aria-pressed="false" data-i18n="m4a">M4A 音频</button>
-          </div>
-        </div>
-      </div>
-      <p class="tk-dl-filename-preview" aria-live="polite" data-i18n="filenamePending">文件名预览会在识别视频后显示</p>
+      <p class="tk-dl-filename-preview" aria-live="polite" data-i18n="filenamePending">The filename appears after the video is recognized</p>
       <div class="tk-dl-estimate hidden">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        <span class="tk-dl-estimate-text" data-i18n="estimateEmpty">预计大小 —</span>
+        <span class="tk-dl-estimate-text" data-i18n="estimateEmpty">Estimated size —</span>
       </div>
       <button type="button" class="tk-dl-btn tk-dl-start" disabled>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        <span class="tk-dl-start-label" data-i18n="startDownload">开始下载</span>
+        <span class="tk-dl-start-label" data-i18n="startDownload">Start download</span>
       </button>
-      <div class="tk-dl-job-panel hidden">
-        <div class="tk-dl-job-list"></div>
-        <div class="tk-dl-job-panel-queue hidden">
-          <button type="button" class="tk-dl-action-btn" data-bulk="pause-all" data-i18n="pauseAll">暂停全部</button>
-          <button type="button" class="tk-dl-action-btn danger" data-bulk="cancel-waiting" data-i18n="cancelWaiting">取消等待</button>
-        </div>
-      </div>
-      <div class="tk-status" hidden role="status"></div>
       <details class="tk-dl-debug">
-        <summary data-i18n="debugLog">调试日志</summary>
+        <summary data-i18n="debugLog">Debug log</summary>
         <div class="tk-dl-debug-actions">
-          <button type="button" class="tk-dl-debug-copy" data-i18n="copyLog">复制日志</button>
-          <button type="button" class="tk-dl-debug-clear" data-i18n="clearLog">清空</button>
+          <button type="button" class="tk-dl-debug-copy" data-i18n="copyLog">Copy log</button>
+          <button type="button" class="tk-dl-debug-clear" data-i18n="clearLog">Clear</button>
         </div>
-        <pre class="tk-dl-debug-log" data-i18n="waitingDownload">等待下载操作…</pre>
+        <pre class="tk-dl-debug-log" data-i18n="waitingDownload">Waiting for a download…</pre>
       </details>
     </div>
     <div class="tk-dl-creator-body hidden"></div>
+    <div class="tk-dl-job-panel hidden">
+      <div class="tk-dl-job-list"></div>
+      <div class="tk-dl-job-panel-queue hidden">
+        <button type="button" class="tk-dl-action-btn" data-bulk="pause-all" data-i18n="pauseAll">Pause all</button>
+        <button type="button" class="tk-dl-action-btn danger" data-bulk="cancel-all" data-i18n="cancelAll">Cancel all</button>
+      </div>
+      <p class="tk-dl-job-more hidden"></p>
+    </div>
+    <div class="tk-status" hidden role="status"></div>
   `;
   shell.home.appendChild(ui);
 
@@ -212,6 +214,7 @@
       activeMode = button.dataset.mode || 'video';
       if (activeMode === 'creator' && snapshot.kind === 'creator') scanDomCreatorVideos();
       syncModeTabs();
+      refreshJobPanel().catch(() => {});
       renderView();
     });
   });
@@ -243,7 +246,7 @@
   });
   jobPanelEl?.querySelectorAll('[data-bulk]').forEach((button) => {
     button.addEventListener('click', () => {
-      queueBulk(button.dataset.bulk).then(() => refreshJobPanel()).catch((error) => setStatus(error.message, 'error'));
+      bulkTask(button.dataset.bulk).then(() => refreshJobPanel()).catch((error) => setStatus(error.message, 'error'));
     });
   });
   function node(parent, tag, className, text) {
@@ -272,25 +275,41 @@
     return send('TIKTOK_DL_OPEN_DOWNLOADS').catch(() => null);
   }
 
-  function setStatus(message, kind) {
+  const modeStatus = { video: null, creator: null };
+
+  function paintStatus() {
     if (!appStatus) return;
-    clearTimeout(setStatus.timer);
+    const note = modeStatus[currentQueue()];
     appStatus.replaceChildren();
-    appStatus.dataset.kind = kind || 'info';
-    appStatus.hidden = !message;
-    if (!message) return;
-    appStatus.appendChild(document.createTextNode(String(message)));
-    if (kind === 'success') {
+    if (!note) {
+      appStatus.hidden = true;
+      delete appStatus.dataset.kind;
+      return;
+    }
+    appStatus.hidden = false;
+    appStatus.dataset.kind = note.kind || 'info';
+    if (note.message) appStatus.appendChild(document.createTextNode(note.message));
+    if (note.kind === 'success') {
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'tk-status-action';
       action.textContent = t('viewDownloads');
       action.addEventListener('click', () => { openBrowserDownloads(); });
       appStatus.appendChild(action);
-      return;
     }
+  }
+
+  function setStatus(message, kind) {
+    const queue = currentQueue();
+    clearTimeout(setStatus.timer);
+    if (kind === 'success') modeStatus[queue] = { kind: 'success' };
+    else if (message) modeStatus[queue] = { kind: kind || 'info', message: String(message) };
+    else modeStatus[queue] = null;
+    paintStatus();
+    if (kind === 'success' || !message) return;
     setStatus.timer = setTimeout(() => {
-      if (appStatus) appStatus.hidden = true;
+      if (modeStatus[queue]?.message === String(message)) modeStatus[queue] = null;
+      paintStatus();
     }, 5000);
   }
 
@@ -307,11 +326,12 @@
   }
 
   function showSavedStatus(task) {
+    const queue = taskQueue(task);
     const id = String(task?.id || '');
     if (!id || showSavedStatus.lastId === id) return;
     showSavedStatus.lastId = id;
-    const label = task?.type === 'audio' ? 'M4A' : task?.type === 'cover' ? t('coverType') : 'MP4';
-    setStatus(t('savedFile', { label, name: displayLabelForTask(task) }), 'success');
+    modeStatus[queue] = { kind: 'success' };
+    paintStatus();
   }
 
   function setFabVisible(visible) {
@@ -325,7 +345,7 @@
     return {
       ...DEFAULT_PREFS,
       ...source,
-      maxConcurrentDownloads: [1, 2, 3].includes(parallel) ? parallel : 2,
+      maxConcurrentDownloads: 1,
       defaultQuality: source.defaultQuality === 'source' ? 'source' : 'highest',
       defaultFormat: 'mp4',
       skipDownloaded: source.skipDownloaded !== false,
@@ -369,8 +389,16 @@
     return send('TIKTOK_DL_QUEUE_CONTROL', { id, action });
   }
 
+  function taskQueue(task) {
+    return task?.queue === 'creator' ? 'creator' : 'video';
+  }
+
+  function currentQueue() {
+    return activeMode === 'creator' ? 'creator' : 'video';
+  }
+
   async function bulkTask(action) {
-    return send('TIKTOK_DL_QUEUE_BULK', { action });
+    return send('TIKTOK_DL_QUEUE_BULK', { action, queue: currentQueue() });
   }
 
   function safeHttpUrl(value) {
@@ -386,6 +414,7 @@
     const href = safeHttpUrl(value);
     if (!href) return '';
     const host = new URL(href).hostname.toLowerCase();
+    if (host === 'tiktok.com' || /^(www|m|vm|vt)\.tiktok\.com$/.test(host)) return '';
     return /(^|\.)(tiktok\.com|tiktokv\.com|tiktokcdn\.com|tiktokcdn-us\.com|byteoversea\.com|ibytedtos\.com|ttwstatic\.com|muscdn\.com|byteimg\.com|bytecdn\.cn)$/.test(host) ? href : '';
   }
 
@@ -518,6 +547,27 @@
     return 2;
   }
 
+  function hasDownloadableVideo(video) {
+    const downloadable = mediaResources(video, 'video').some((item) => resourceSourceRank(item) >= 3);
+    if (!downloadable) return false;
+    if (Number(video.pinIndex) >= 0 && video.detailResolved !== true) return false;
+    return true;
+  }
+
+  function chromePlan(resource) {
+    const preferred = (Array.isArray(resource?.downloadUrls) ? resource.downloadUrls : [])
+      .map(safeMediaUrl).filter(Boolean);
+    if (preferred.length) {
+      const backups = [...new Set([...preferred.slice(1), ...(Array.isArray(resource?.backupUrls) ? resource.backupUrls : [])
+        .map(safeMediaUrl).filter(Boolean)])].filter((url) => url !== preferred[0]);
+      return { url: preferred[0], backups };
+    }
+    const url = safeMediaUrl(resource?.url);
+    const backups = (Array.isArray(resource?.backupUrls) ? resource.backupUrls : [])
+      .map(safeMediaUrl).filter((candidate) => candidate && candidate !== url);
+    return { url, backups };
+  }
+
   function pickResource(video, list) {
     if (!list.length) return null;
     const selected = selectedResources.get(video.id);
@@ -551,7 +601,7 @@
     const meta = {
       title: (() => {
         const raw = String(video.title || '').trim();
-        if (!raw || /TikTok\s*下载助手|TikTok Downloader|开始下载|Start download|清晰度|Quality|保存为|Save as/.test(raw) || /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(raw)) {
+        if (creatorTitleLooksBad(raw)) {
           return video.author || video.authorId || 'TikTok video';
         }
         const letters = raw.replace(/\s+/g, '');
@@ -594,9 +644,9 @@
       if (type === 'audio' && !isValidAudioResource(resource, video)) {
         throw new Error(t('noSeparateAudio'));
       }
-      url = safeMediaUrl(resource?.url);
-      backupUrls = (Array.isArray(resource?.backupUrls) ? resource.backupUrls : [])
-        .map(safeMediaUrl).filter((candidate) => candidate && candidate !== url);
+      const plan = chromePlan(resource);
+      url = plan.url;
+      backupUrls = plan.backups;
       quality = resource?.quality || t('originalQuality');
       format = type === 'video' ? 'mp4' : audioExtension(resource);
     }
@@ -625,6 +675,7 @@
       format,
       filename,
       coverUrl: safeHttpUrl(video.cover),
+      queue: 'video',
       recordHistory: prefs.recordHistory,
       forceDuplicate
     };
@@ -643,33 +694,33 @@
   }
 
   async function enqueueCreatorSelection() {
-    const history = await getHistory().catch(() => []);
-    const done = new Set(history.filter((item) => item.status === 'completed' && item.type === 'video').map((item) => item.videoId));
     const tasks = [];
     let missing = 0;
-    let already = 0;
     creatorVideos.forEach((video, id) => {
       if (!selectedIds.has(id)) return;
-      if (prefs.skipDownloaded && done.has(id)) { already += 1; return; }
       const resource = pickResource(video, mediaResources(video, 'video'));
-      if (!resource) { missing += 1; return; }
+      const plan = chromePlan(resource);
+      const url = plan.url;
+      if (!resource || !url || !hasDownloadableVideo(video)) { missing += 1; return; }
       tasks.push({
         id: 'tt-' + id + '-video-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
         videoId: id,
         creatorId: video.authorId || creator?.id || '',
         author: video.author || creator?.displayName || creator?.username || '',
-        title: video.title || 'TikTok video',
+        title: creatorVideoTitle(video),
         publishTime: video.publishTime || '',
         pageUrl: video.pageUrl,
-        url: resource.url,
-        backupUrls: (Array.isArray(resource.backupUrls) ? resource.backupUrls : []).map(safeMediaUrl).filter(Boolean),
+        url,
+        backupUrls: plan.backups,
         type: 'video',
         quality: displayQuality(resource.quality),
         format: 'mp4',
         filename: '',
         coverUrl: safeHttpUrl(video.cover),
+        queue: 'creator',
+        validateMedia: Number(video.pinIndex) >= 0,
         recordHistory: prefs.recordHistory,
-        forceDuplicate: !prefs.skipDownloaded && done.has(id)
+        forceDuplicate: true
       });
     });
     for (const task of tasks) task.filename = await taskFilename(creatorVideos.get(task.videoId), task.quality, 'mp4');
@@ -680,13 +731,15 @@
     const result = await send('TIKTOK_DL_QUEUE_ADD', { tasks });
     const notes = [];
     if (result.added) notes.push(t('addedTasks', { count: result.added }));
-    if (already) notes.push(t('skippedDownloaded', { count: already }));
     if (missing) notes.push(t('missingResource', { count: missing }));
-    if (result.skipped) notes.push(t('queueDeduped', { count: result.skipped }));
-    setStatus(notes.join(' · ') || t('noNewTasks'), result.added ? 'success' : 'warn');
+    if (result.duplicateCount) notes.push(t('alreadyInQueueCount', { count: result.duplicateCount }));
+    if (result.invalidCount) notes.push(t('invalidDownloadCount', { count: result.invalidCount }));
+    if (result.skipped && !result.duplicateCount && !result.invalidCount) notes.push(t('queueDeduped', { count: result.skipped }));
+    setStatus(notes.join(' · ') || t('noNewTasks'), result.added ? 'info' : 'warn');
     if (result.added) {
       selectedIds.clear();
       renderCreatorRows();
+      refreshJobPanel().catch(() => {});
     }
   }
 
@@ -701,6 +754,7 @@
     });
     videoBodyEl.classList.toggle('hidden', activeMode !== 'video');
     creatorBodyEl.classList.toggle('hidden', activeMode !== 'creator');
+    paintStatus();
   }
 
   function syncFormatPills() {
@@ -991,14 +1045,39 @@
   async function refreshJobPanel() {
     if (!jobPanelEl || !jobListEl) return;
     const listed = await getTasks().catch(() => []);
-    const active = (Array.isArray(listed) ? listed : []).filter((task) => ['waiting', 'downloading', 'paused'].includes(task.status));
-    const justFinished = (Array.isArray(listed) ? listed : []).filter((task) => shownJobIds.has(task.id) && task.status === 'completed');
+    const scope = currentQueue();
+    const active = (Array.isArray(listed) ? listed : []).filter((task) => ['waiting', 'downloading', 'paused'].includes(task.status) && taskQueue(task) === scope);
+    const justFinished = (Array.isArray(listed) ? listed : []).filter((task) => shownJobIds.has(task.id) && task.status === 'completed' && taskQueue(task) === scope);
     if (justFinished.length) showSavedStatus(justFinished[0]);
-    const tasks = active.slice(0, 3);
-    const visible = !jobPanelEl.classList.contains('hidden');
+    const current = active.find((task) => task.status === 'downloading')
+      || active.find((task) => task.status === 'waiting')
+      || active[0];
+    const tasks = current ? [current] : [];
     const shouldShow = tasks.length > 0;
-    if (visible !== shouldShow) jobPanelEl.classList.toggle('hidden', !shouldShow);
-    jobPanelEl.querySelector('.tk-dl-job-panel-queue')?.classList.toggle('hidden', active.length < 2);
+    jobPanelEl.classList.toggle('hidden', !shouldShow);
+    ui.classList.toggle('is-queue', shouldShow);
+    if (!shouldShow) {
+      jobListEl.replaceChildren();
+      jobPanelEl.querySelector('.tk-dl-job-panel-queue')?.classList.add('hidden');
+      jobPanelEl.querySelector('.tk-dl-job-more')?.classList.add('hidden');
+      shownJobIds = new Set();
+      clearTimeout(jobWatchTimer);
+      return;
+    }
+    const more = jobPanelEl.querySelector('.tk-dl-job-more');
+    if (more) {
+      const extra = Math.max(0, active.length - tasks.length);
+      more.classList.toggle('hidden', extra < 1);
+      more.textContent = extra ? t('queueMore', { count: active.length }) : '';
+    }
+    const queueActions = jobPanelEl.querySelector('.tk-dl-job-panel-queue');
+    queueActions?.classList.toggle('hidden', active.length < 1);
+    const pauseAllBtn = queueActions?.querySelector('[data-bulk="pause-all"], [data-bulk="resume-all"]');
+    if (pauseAllBtn) {
+      const runnable = active.some((task) => task.status === 'downloading' || task.status === 'waiting');
+      pauseAllBtn.dataset.bulk = runnable ? 'pause-all' : 'resume-all';
+      pauseAllBtn.textContent = runnable ? t('pauseAll') : t('resumeAll');
+    }
     shownJobIds = new Set(active.map((task) => task.id));
     clearTimeout(jobWatchTimer);
     if (active.length) jobWatchTimer = setTimeout(() => { refreshJobPanel().catch(() => {}); }, 900);
@@ -1029,9 +1108,12 @@
     if (activeMode === 'creator') {
       creatorRows = null;
       creatorStats = null;
+      creatorListCount = null;
+      creatorResourceHint = null;
       creatorSelectionStatus = null;
       creatorBodyEl.replaceChildren();
       renderCreatorView(creatorBodyEl);
+      refreshJobPanel().catch(() => {});
       return;
     }
     renderVideoView();
@@ -1057,20 +1139,32 @@
       authorId: video.authorId || '',
       duration: Number(video.duration) || 0,
       publishTime: video.publishTime || '',
-      cover: video.cover || ''
+      cover: video.cover || '',
+      pinIndex: Number.isFinite(Number(video.pinIndex)) ? Number(video.pinIndex) : -1
     };
+  }
+
+  function trimCreatorCache() {
+    const ranked = Object.entries(creatorSaved).sort((a, b) => {
+      const left = Number(a[1]?.touchedAt) || Number(a[1]?.lastScanAt) || 0;
+      const right = Number(b[1]?.touchedAt) || Number(b[1]?.lastScanAt) || 0;
+      return right - left;
+    });
+    ranked.slice(CREATOR_CACHE_LIMIT).forEach(([key]) => { delete creatorSaved[key]; });
   }
 
   function persistCreatorVideos() {
     clearTimeout(collectionSaveTimer);
     collectionSaveTimer = setTimeout(async () => {
-      if (!creatorKey || creatorPersistenceBlocked) return;
+      if (!creatorKey || creatorPersistenceBlocked || snapshot.kind !== 'creator') return;
       creatorSaved[creatorKey] = {
         creator: creator,
         lastScanAt,
+        touchedAt: Date.now(),
         scanState: scanState === 'scanning' ? 'paused' : scanState,
         videos: [...creatorVideos.values()].slice(0, 5000).map(storedVideo)
       };
+      trimCreatorCache();
       await DownloaderKit.runtime.storageSet({ [CREATOR_KEY]: creatorSaved }, EXT).catch(() => {});
     }, 250);
   }
@@ -1082,19 +1176,69 @@
     creatorDataCleared = false;
     creatorKey = key;
     creatorVideos = new Map();
+    resourceResolveAt.clear();
     selectedIds.clear();
     const stored = await DownloaderKit.runtime.storageGet([CREATOR_KEY], EXT).catch(() => ({}));
     creatorSaved = stored?.[CREATOR_KEY] && typeof stored[CREATOR_KEY] === 'object' ? stored[CREATOR_KEY] : {};
-    const entry = creatorSaved[key];
-    if (Array.isArray(entry?.videos)) {
-      entry.videos.forEach((video) => {
+    const entry = creatorSaved[key] && typeof creatorSaved[key] === 'object' ? creatorSaved[key] : null;
+    if (snapshot.kind === 'creator') {
+      creatorSaved[key] = {
+        ...(entry || {}),
+        creator: nextCreator || entry?.creator || null,
+        touchedAt: Date.now(),
+        videos: Array.isArray(entry?.videos) ? entry.videos : []
+      };
+      trimCreatorCache();
+      await DownloaderKit.runtime.storageSet({ [CREATOR_KEY]: creatorSaved }, EXT).catch(() => {});
+    }
+    const saved = creatorSaved[key];
+    if (Array.isArray(saved?.videos)) {
+      saved.videos.forEach((video) => {
         if (video?.id) creatorVideos.set(String(video.id), { ...video, resources: [] });
       });
     }
-    lastScanAt = Number(entry?.lastScanAt) || 0;
-    scanState = entry?.scanState === 'paused' ? 'paused' : 'idle';
+    lastScanAt = Number(saved?.lastScanAt) || 0;
+    scanState = saved?.scanState === 'paused' ? 'paused' : 'idle';
     updateCreatorStats();
     if (activeMode === 'creator') renderCreatorRows();
+  }
+
+  let videoInfoCache = [];
+  let videoCacheTimer = 0;
+  function videoCacheRecord(video) {
+    return {
+      id: String(video.id),
+      pageUrl: video.pageUrl || '',
+      title: video.title || '',
+      description: video.description || '',
+      author: video.author || '',
+      authorId: video.authorId || '',
+      duration: Number(video.duration) || 0,
+      publishTime: video.publishTime || '',
+      cover: video.cover || ''
+    };
+  }
+
+  function rememberVideoInfo(video) {
+    if (!video?.id || !/^\d+$/.test(String(video.id))) return;
+    const record = videoCacheRecord(video);
+    videoInfoCache = [record, ...videoInfoCache.filter((item) => item.id !== record.id)].slice(0, VIDEO_CACHE_LIMIT);
+    clearTimeout(videoCacheTimer);
+    videoCacheTimer = setTimeout(() => {
+      DownloaderKit.runtime.storageSet({ [VIDEO_CACHE_KEY]: videoInfoCache }, EXT).catch(() => {});
+    }, 200);
+  }
+
+  async function loadVideoInfoCache() {
+    const stored = await DownloaderKit.runtime.storageGet([VIDEO_CACHE_KEY], EXT).catch(() => ({}));
+    const list = Array.isArray(stored?.[VIDEO_CACHE_KEY]) ? stored[VIDEO_CACHE_KEY] : [];
+    videoInfoCache = list.filter((item) => item?.id).slice(0, VIDEO_CACHE_LIMIT);
+    if (!videoInfoCache.length) return;
+    window.postMessage({
+      source: 'tiktok-downloader-content',
+      type: 'RESTORE_VIDEOS',
+      videos: videoInfoCache
+    }, location.origin);
   }
 
   function mergeCreatorVideos(videos) {
@@ -1103,21 +1247,36 @@
       if (!video?.id || !/^\d+$/.test(String(video.id))) return;
       const id = String(video.id);
       const previous = creatorVideos.get(id) || {};
+      const title = !creatorTitleLooksBad(video.title) ? String(video.title)
+        : !creatorTitleLooksBad(previous.title) ? String(previous.title) : '';
+      const description = !creatorTitleLooksBad(video.description) ? String(video.description)
+        : !creatorTitleLooksBad(previous.description) ? String(previous.description) : '';
       const resources = Array.isArray(video.resources) && video.resources.length ? video.resources : (previous.resources || []);
-      const merged = { ...previous, ...video, id, resources };
+      const pinIndex = Number.isFinite(Number(video.pinIndex)) ? Number(video.pinIndex) : previous.pinIndex;
+      const merged = {
+        ...previous,
+        ...video,
+        id,
+        title: title || description,
+        description,
+        resources,
+        pinIndex,
+        detailResolved: video.detailResolved === true || previous.detailResolved === true
+      };
       if (JSON.stringify(merged) !== JSON.stringify(previous)) changed = true;
       creatorVideos.set(id, merged);
     });
     if (changed) {
       updateCreatorStats();
       persistCreatorVideos();
-      if (activeMode === 'creator') renderCreatorRows();
+      if (activeMode === 'creator') queueCreatorRender();
     }
   }
 
   function creatorTitleLooksBad(value) {
     const title = String(value || '').trim();
     if (!title) return true;
+    if (/^\d+(?:[.,]\d+)?\s*(?:[KMB]|万|亿)?$/i.test(title)) return true;
     if (/^(打开视频页|open video page|watch video|watch now|video)$/i.test(title)) return true;
     if (/TikTok\s*下载助手|TikTok Downloader|开始下载|Start download|清晰度|Quality|保存为|Save as/.test(title)) return true;
     if (/\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(title)) return true;
@@ -1131,7 +1290,7 @@
       if (creatorTitleLooksBad(line)) continue;
       if (/^\d{1,2}:\d{2}$/.test(line)) continue;
       if (/^@\S+$/.test(line)) continue;
-      if (/^\d+$/.test(line)) continue;
+      if (/^(已置顶|置顶|pinned|固定|고정됨|고정)$/i.test(line)) continue;
       return line.slice(0, 500);
     }
     const aria = anchor.getAttribute('aria-label') || anchor.getAttribute('title') || image?.alt || '';
@@ -1147,20 +1306,47 @@
     return t('tiktokVideoId', { id: video.id });
   }
 
+  function videoCard(anchor) {
+    let card = anchor;
+    let node = anchor.parentElement;
+    for (let i = 0; i < 8 && node; i += 1) {
+      const ids = new Set();
+      node.querySelectorAll('a[href*="/video/"]').forEach((link) => {
+        const id = (link.getAttribute('href') || '').match(/\/video\/(\d+)/);
+        if (id) ids.add(id[1]);
+      });
+      if (ids.size > 1) break;
+      card = node;
+      node = node.parentElement;
+    }
+    return card;
+  }
+
+  function cardLooksPinned(card) {
+    if (!card?.querySelectorAll) return false;
+    for (const label of card.querySelectorAll('span, div, p')) {
+      const value = (label.textContent || '').replace(/\s+/g, '');
+      if (!value || value.length > 12) continue;
+      if (/(已置顶|^置顶$|^pinned$|^固定$|고정)/i.test(value)) return true;
+    }
+    return false;
+  }
+
   function scanDomCreatorVideos() {
     if (!creatorPageAvailable()) return;
     const found = [];
+    const seen = new Set();
+    let pinIndex = 0;
     document.querySelectorAll('a[href*="/video/"]').forEach((anchor) => {
       let url;
       try { url = new URL(anchor.href, location.href); } catch (_) { return; }
       const match = url.pathname.match(/\/@([^/]+)\/video\/(\d+)/i);
-      if (!match) return;
+      if (!match || anchor.closest('#tiktok-dl-root, #tiktok-dl-panel, .dl-kit')) return;
       const id = match[2];
+      if (seen.has(id)) return;
+      seen.add(id);
       const existing = creatorVideos.get(id);
-      let card = anchor;
-      for (let i = 0; i < 5 && card.parentElement; i += 1) {
-        if ((card.innerText || '').trim().length > (anchor.innerText || '').trim().length + 12) card = card.parentElement;
-      }
+      const card = videoCard(anchor);
       const image = anchor.querySelector('img') || card.querySelector('img');
       const picked = pickCreatorDomTitle(anchor, card, image);
       const rawTitle = picked || existing?.title || existing?.description || '';
@@ -1168,6 +1354,7 @@
         ? String(existing.title).slice(0, 500)
         : String(rawTitle).slice(0, 500);
       const creatorMatch = url.pathname.match(/^\/@([^/]+)/);
+      const pinned = cardLooksPinned(card) || cardLooksPinned(anchor);
       const item = {
         id,
         pageUrl: url.href,
@@ -1180,9 +1367,94 @@
         cover: safeHttpUrl(image?.currentSrc || image?.src || existing?.cover),
         resources: existing?.resources || []
       };
+      if (pinned) {
+        item.pinIndex = pinIndex;
+        pinIndex += 1;
+      }
       found.push(item);
     });
     if (found.length) mergeCreatorVideos(found);
+  }
+
+  const resourceResolveAt = new Set();
+  let resourceResolveEpoch = 0;
+  let resourceResolveBusy = false;
+  let lastPendingResources = 0;
+  function syncResourceHint(pending) {
+    lastPendingResources = pending;
+    if (!creatorResourceHint) return;
+    const show = resourceResolveBusy && pending > 0;
+    creatorResourceHint.classList.toggle('hidden', !show);
+    creatorResourceHint.textContent = show ? t('resourcePending', { count: pending }) : '';
+  }
+  function requestMissingResources() {
+    if (!creatorPageAvailable()) return;
+    const missing = [];
+    creatorVideos.forEach((video, id) => {
+      if (hasDownloadableVideo(video) && (!creatorTitleLooksBad(video.title) || video.detailResolved === true)) return;
+      const pageUrl = video.pageUrl || ('https://www.tiktok.com/@' + encodeURIComponent(creator?.username || '') + '/video/' + id);
+      if (!pageUrl) return;
+      if (resourceResolveAt.has(id)) return;
+      resourceResolveAt.add(id);
+      missing.push({ id, pageUrl });
+    });
+    if (!missing.length) return;
+    resourceResolveEpoch += 1;
+    resourceResolveBusy = true;
+    syncResourceHint(lastPendingResources);
+    const epoch = resourceResolveEpoch;
+    for (let index = 0; index < missing.length; index += 30) {
+      window.postMessage({
+        source: 'tiktok-downloader-content',
+        type: 'RESOLVE_VIDEOS',
+        epoch,
+        videos: missing.slice(index, index + 30)
+      }, location.origin);
+    }
+  }
+
+  function refreshCreatorAvatar() {
+    if (activeMode !== 'creator') return;
+    const url = safeHttpUrl(creator?.avatar) || pageProfileAvatar();
+    if (!url) return;
+    const placeholder = creatorBodyEl?.querySelector('.tk-avatar-placeholder');
+    const current = creatorBodyEl?.querySelector('img.tk-avatar');
+    if (current) {
+      if (current.src !== url) current.src = url;
+      return;
+    }
+    if (!placeholder) return;
+    const image = document.createElement('img');
+    image.className = 'tk-avatar';
+    image.alt = '';
+    image.addEventListener('error', () => {
+      const fallback = pageProfileAvatar();
+      if (fallback && image.src !== fallback) {
+        image.src = fallback;
+        return;
+      }
+      image.remove();
+      placeholder.classList.remove('hidden');
+    });
+    image.src = url;
+    placeholder.classList.add('hidden');
+    placeholder.after(image);
+  }
+
+  function pageProfileAvatar() {
+    const marked = document.querySelector('[data-e2e="user-avatar"] img, [data-e2e="user-avatar"]');
+    const markedImage = marked?.tagName === 'IMG' ? marked : marked?.querySelector('img');
+    const markedUrl = safeHttpUrl(markedImage?.currentSrc || markedImage?.src);
+    if (markedUrl) return markedUrl;
+    for (const image of document.querySelectorAll('img')) {
+      if (image.closest('#tiktok-dl-root, a[href*="/video/"]')) continue;
+      const src = safeHttpUrl(image.currentSrc || image.src);
+      if (!src || !/tiktokcdn|byteimg|muscdn|ibyteimg|ttwstatic/i.test(src)) continue;
+      const width = image.naturalWidth || image.width || 0;
+      const height = image.naturalHeight || image.height || 0;
+      if (width >= 48 && height >= 48 && Math.abs(width - height) <= Math.max(width, height) * 0.4) return src;
+    }
+    return '';
   }
 
   function renderCreatorView(parent) {
@@ -1196,21 +1468,35 @@
     }
 
     const summary = node(parent, 'section', 'tk-creator-summary');
-    const avatarUrl = safeHttpUrl(profile?.avatar);
+    const main = node(summary, 'div', 'tk-creator-main');
+    const avatarUrl = safeHttpUrl(profile?.avatar) || pageProfileAvatar();
+    const avatarPh = node(main, 'div', 'tk-avatar tk-avatar-placeholder' + (avatarUrl ? ' hidden' : ''), (profile?.username || 'T').slice(0, 1).toUpperCase());
     if (avatarUrl) {
-      const avatar = node(summary, 'img', 'tk-avatar');
-      avatar.src = avatarUrl;
+      const avatar = node(main, 'img', 'tk-avatar');
       avatar.alt = '';
-      avatar.referrerPolicy = 'no-referrer';
-    } else node(summary, 'div', 'tk-avatar tk-avatar-placeholder', '♪');
-    const identity = node(summary, 'div', 'tk-creator-identity');
-    node(identity, 'strong', '', profile?.displayName || profile?.username || 'TikTok Creator');
-    node(identity, 'span', 'tk-creator-handle', '@' + (profile?.username || ''));
+      const fallback = pageProfileAvatar();
+      avatar.addEventListener('error', () => {
+        if (fallback && avatar.src !== fallback) {
+          avatar.src = fallback;
+          return;
+        }
+        avatar.remove();
+        avatarPh.classList.remove('hidden');
+      });
+      avatar.src = avatarUrl;
+    }
+    const identity = node(main, 'div', 'tk-creator-identity');
+    const username = String(profile?.username || '').trim();
+    const displayName = String(profile?.displayName || '').trim();
+    const normalizedDisplay = displayName.replace(/^@/, '').toLowerCase();
+    const sameIdentity = username && displayName && normalizedDisplay === username.toLowerCase();
+    if (sameIdentity) node(identity, 'strong', '', '@' + username);
+    else {
+      node(identity, 'strong', '', displayName || username || 'TikTok Creator');
+      if (username) node(identity, 'span', 'tk-creator-handle', '@' + username);
+    }
     creatorStats = node(identity, 'span', 'tk-count');
-    const scanControls = node(parent, 'div', 'tk-scan-controls');
-    const scanButton = button(scanControls, t('scanAll'), 'tk-button tk-primary');
-    const pauseButton = button(scanControls, t('pause'), 'tk-button');
-    const stopButton = button(scanControls, t('stop'), 'tk-button tk-danger');
+    const scanButton = button(summary, t('scanAll'), 'tk-button tk-primary tk-scan-btn');
     scanButton.addEventListener('click', () => {
       if (scanState === 'paused') resumeCreatorScan();
       else startCreatorScan().catch((error) => {
@@ -1220,52 +1506,23 @@
         setStatus(t('scanFailed', { error: error.message }), 'error');
       });
     });
-    pauseButton.addEventListener('click', () => pauseCreatorScan());
-    stopButton.addEventListener('click', () => stopCreatorScan());
-    creatorScanButtons = { scanButton, pauseButton, stopButton };
+    creatorScanButtons = { scanButton, summary };
     updateCreatorStats();
-    const filters = node(parent, 'div', 'tk-filter-row');
-    const search = node(filters, 'input', 'tk-input');
-    search.type = 'search';
-    search.placeholder = t('searchTitleDesc');
-    search.value = creatorSearch;
-    search.setAttribute('aria-label', t('searchCreatorVideos'));
-    search.addEventListener('input', () => { creatorSearch = search.value; renderCreatorRows(); });
-    const statusWrap = node(filters, 'div', 'tk-select-wrap');
-    const status = node(statusWrap, 'select', 'tk-select tk-filter');
-    status.setAttribute('aria-label', t('filterDownloadStatus'));
-    [
-      ['all', t('statusAll')],
-      ['new', t('statusNew')],
-      ['downloaded', t('statusDownloaded')],
-      ['failed', t('statusFailed')]
-    ].forEach(([value, label]) => {
-      const option = node(status, 'option', '', label);
-      option.value = value;
-    });
-    status.value = creatorStatusFilter;
-    status.addEventListener('change', () => { creatorStatusFilter = status.value; renderCreatorRows(); });
-    const dateWrap = node(filters, 'div', 'tk-select-wrap');
-    const date = node(dateWrap, 'select', 'tk-select tk-filter');
-    date.setAttribute('aria-label', t('filterPublishTime'));
-    [['all', t('timeAll')], ['7', t('time7')], ['30', t('time30')], ['90', t('time90')]].forEach(([value, label]) => {
-      const option = node(date, 'option', '', label);
-      option.value = value;
-    });
-    date.value = creatorDateFilter;
-    date.addEventListener('change', () => { creatorDateFilter = date.value; renderCreatorRows(); });
-    const actions = node(parent, 'div', 'tk-list-actions');
-    const selectAll = button(actions, t('selectAllResults'), 'tk-mini-button', () => {
+    const toolbar = node(parent, 'div', 'tk-list-toolbar');
+    creatorListCount = node(toolbar, 'span', 'tk-list-count', '');
+    creatorResourceHint = node(parent, 'p', 'tk-resource-hint hidden', '');
+    const actions = node(toolbar, 'div', 'tk-list-actions');
+    button(actions, t('selectAllShort'), 'tk-mini-button', () => {
       visibleCreatorVideos().forEach((video) => selectedIds.add(video.id));
       renderCreatorRows();
     });
-    const selectNew = button(actions, t('selectUndownloaded'), 'tk-mini-button', async () => {
-      const history = await getHistory().catch(() => []);
-      const done = new Set(history.filter((item) => item.status === 'completed' && item.type === 'video').map((item) => item.videoId));
+    button(actions, t('selectNewShort'), 'tk-mini-button', async () => {
+      const [history, queued] = await Promise.all([getHistory().catch(() => []), getTasks().catch(() => [])]);
+      const done = completedCreatorVideos(history, queued);
       visibleCreatorVideos().forEach((video) => { if (!done.has(video.id)) selectedIds.add(video.id); });
       renderCreatorRows();
     });
-    button(actions, t('deselect'), 'tk-mini-button', () => { selectedIds.clear(); renderCreatorRows(); });
+    button(actions, t('clearShort'), 'tk-mini-button', () => { selectedIds.clear(); renderCreatorRows(); });
     creatorRows = node(parent, 'div', 'tk-creator-list');
     const selectionBar = node(parent, 'div', 'tk-selection-bar');
     creatorSelectionStatus = node(selectionBar, 'span', '', t('selectedCount', { count: 0 }));
@@ -1273,26 +1530,43 @@
     addSelected.addEventListener('click', () => enqueueCreatorSelection().catch((error) => setStatus(error.message, 'error')));
     renderCreatorRows();
     updateScanButtons();
+    requestMissingResources();
   }
 
   let creatorScanButtons = null;
+  let creatorListCount = null;
+  let creatorResourceHint = null;
+  function creatorCountText(total) {
+    return total > 0 || creatorVideos.size > 0
+      ? t('listVideoCount', { count: total }) : t('notScanned').replace(/^\s*·\s*/, '');
+  }
+
   function updateCreatorStats() {
-    if (!creatorStats) return;
-    const total = creatorVideos.size;
-    creatorStats.textContent = total > 0
-      ? t('creatorStatsShort', { state: scanStateLabel(scanState), count: total })
-      : scanStateLabel(scanState) + ' · ' + t('notScanned');
+    const total = [...creatorVideos.values()].filter((video) => mediaResources(video, 'video').length > 0).length;
+    if (creatorStats) {
+      creatorStats.textContent = total > 0 || creatorVideos.size > 0
+        ? t('creatorStatsShort', { state: scanStateLabel(scanState), count: total })
+        : scanStateLabel(scanState) + ' · ' + t('notScanned').replace(/^\s*·\s*/, '');
+    }
+    if (creatorListCount) creatorListCount.textContent = creatorCountText(total);
     updateScanButtons();
   }
 
+  function scanUsesPrimaryButton() {
+    return creatorVideos.size === 0 && scanState !== 'scanning' && scanState !== 'paused';
+  }
+
   function updateScanButtons() {
-    if (!creatorScanButtons) return;
+    const scanButton = creatorScanButtons?.scanButton;
+    if (!scanButton) return;
+    const primary = scanUsesPrimaryButton();
+    creatorScanButtons.summary?.classList.toggle('is-primary', primary);
     const active = scanState === 'scanning';
-    creatorScanButtons.scanButton.textContent = scanState === 'paused' ? t('continueScan') : t('scanAll');
-    creatorScanButtons.scanButton.disabled = active;
-    creatorScanButtons.pauseButton.textContent = scanPaused || scanState === 'paused' ? t('resume') : t('pause');
-    creatorScanButtons.pauseButton.disabled = !active && scanState !== 'paused';
-    creatorScanButtons.stopButton.disabled = !active && scanState !== 'paused';
+    scanButton.disabled = active;
+    if (active) scanButton.textContent = t('scanScanning');
+    else if (scanState === 'paused') scanButton.textContent = t('continueScan');
+    else if (primary) scanButton.textContent = t('scanAll');
+    else scanButton.textContent = t('rescan');
   }
 
   async function startCreatorScan() {
@@ -1303,6 +1577,7 @@
     scanStopRequested = false;
     scanPaused = false;
     scanState = 'scanning';
+    resourceResolveAt.clear();
     persistCreatorVideos();
     updateCreatorStats();
     scanDomCreatorVideos();
@@ -1341,17 +1616,9 @@
       lastScanAt = scanState === 'completed' ? Date.now() : lastScanAt;
       persistCreatorVideos();
       updateCreatorStats();
+      if (scanState === 'completed') requestMissingResources();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }
-
-  function pauseCreatorScan() {
-    if (scanState === 'paused') { resumeCreatorScan(); return; }
-    if (scanState !== 'scanning') return;
-    scanPaused = true;
-    scanState = 'paused';
-    persistCreatorVideos();
-    updateCreatorStats();
   }
 
   function resumeCreatorScan() {
@@ -1365,14 +1632,6 @@
     updateCreatorStats();
   }
 
-  function stopCreatorScan() {
-    if (scanState === 'scanning' || scanState === 'paused') {
-      scanStopRequested = true;
-      scanPaused = false;
-      setStatus(t('scanPausedMsg'), 'info');
-    }
-  }
-
   let scanPromise = null;
   const startScan = startCreatorScan;
   startCreatorScan = async function wrappedStartCreatorScan() {
@@ -1382,53 +1641,65 @@
     finally { scanPromise = null; }
   };
 
-  function creatorVideoMatches(video, historyDone, historyFailed) {
-    const query = creatorSearch.trim().toLowerCase();
-    const text = (video.title || video.description || '').toLowerCase();
-    if (query && !text.includes(query)) return false;
-    const downloaded = historyDone.has(video.id);
-    const failed = historyFailed.has(video.id);
-    if (creatorStatusFilter === 'new' && downloaded) return false;
-    if (creatorStatusFilter === 'downloaded' && !downloaded) return false;
-    if (creatorStatusFilter === 'failed' && (!failed || downloaded)) return false;
-    if (creatorDateFilter !== 'all') {
-      const timestamp = new Date(video.publishTime || 0).getTime();
-      if (!timestamp || Date.now() - timestamp > Number(creatorDateFilter) * 86400000) return false;
-    }
-    return true;
-  }
-
   let visibleVideosCache = [];
   function visibleCreatorVideos() { return visibleVideosCache; }
 
+  let creatorRenderTimer = 0;
+  function queueCreatorRender() {
+    clearTimeout(creatorRenderTimer);
+    creatorRenderTimer = setTimeout(renderCreatorRows, 200);
+  }
+
+  let creatorRenderVersion = 0;
+  function latestCreatorVideoTasks(history, queued) {
+    const latest = new Map();
+    [...history, ...queued].filter((item) => item.type === 'video' && item.videoId).forEach((item) => {
+      const previous = latest.get(item.videoId);
+      const time = Number(item.updatedAt || item.time || item.createdAt || 0);
+      const previousTime = Number(previous?.updatedAt || previous?.time || previous?.createdAt || 0);
+      if (!previous || time >= previousTime) latest.set(item.videoId, item);
+    });
+    return latest;
+  }
+
+  function completedCreatorVideos(history, queued) {
+    return new Set([...latestCreatorVideoTasks(history, queued)]
+      .filter(([, item]) => item.status === 'completed').map(([videoId]) => videoId));
+  }
+
   function renderCreatorRows() {
     if (!creatorRows) return;
-    const historyTask = getHistory().catch(() => []);
-    historyTask.then((history) => {
-      if (!creatorRows?.isConnected) return;
-      const done = new Set(history.filter((item) => item.status === 'completed' && item.type === 'video').map((item) => item.videoId));
-      const failed = new Set(history.filter((item) => item.status === 'failed' && item.type === 'video').map((item) => item.videoId));
+    const version = ++creatorRenderVersion;
+    Promise.all([getHistory().catch(() => []), getTasks().catch(() => [])]).then(([history, queued]) => {
+      if (!creatorRows?.isConnected || version !== creatorRenderVersion) return;
+      const latestByVideo = latestCreatorVideoTasks(history, queued);
       const all = [...creatorVideos.values()].sort((a, b) => {
+        const pa = Number(a.pinIndex);
+        const pb = Number(b.pinIndex);
+        const aPinned = Number.isFinite(pa) && pa >= 0;
+        const bPinned = Number.isFinite(pb) && pb >= 0;
+        if (aPinned && bPinned && pa !== pb) return pa - pb;
+        if (aPinned !== bPinned) return aPinned ? -1 : 1;
         const da = new Date(a.publishTime || 0).getTime() || 0;
         const db = new Date(b.publishTime || 0).getTime() || 0;
         return db - da;
       });
-      const visible = all.filter((video) => creatorVideoMatches(video, done, failed));
+      const visible = all.filter((video) => mediaResources(video, 'video').length > 0);
+      const availableIds = new Set(visible.map((video) => video.id));
+      selectedIds.forEach((id) => { if (!availableIds.has(id)) selectedIds.delete(id); });
       visibleVideosCache = visible;
       if (creatorStats) {
-        const downloadedCount = all.filter((video) => done.has(video.id)).length;
-        creatorStats.textContent = t('creatorStats', {
-          state: scanStateLabel(scanState),
-          total: all.length,
-          downloaded: downloadedCount,
-          added: Math.max(0, all.length - downloadedCount)
-        });
+        creatorStats.textContent = visible.length > 0 || all.length > 0
+          ? t('creatorStatsShort', { state: scanStateLabel(scanState), count: visible.length })
+          : scanStateLabel(scanState) + ' · ' + t('notScanned');
       }
       creatorRows.replaceChildren();
+      const pendingResources = all.filter((video) => !hasDownloadableVideo(video)).length;
+      syncResourceHint(pendingResources);
       if (!visible.length) {
-        node(creatorRows, 'p', 'tk-empty-inline', all.length ? t('noFilterMatch') : t('scanToSee'));
+        node(creatorRows, 'p', 'tk-empty-inline', all.length ? t('noDownloadableVideos') : t('scanToSee'));
       }
-      visible.slice(0, 200).forEach((video) => {
+      visible.forEach((video) => {
         const row = node(creatorRows, 'article', 'tk-creator-item');
         const check = node(row, 'input', 'tk-checkbox');
         check.type = 'checkbox';
@@ -1439,11 +1710,20 @@
           else selectedIds.delete(video.id);
           updateSelectionLabel();
         });
-        const image = node(row, 'img', 'tk-creator-cover');
-        image.alt = '';
-        image.loading = 'lazy';
-        image.referrerPolicy = 'no-referrer';
-        if (safeHttpUrl(video.cover)) image.src = safeHttpUrl(video.cover);
+        const coverSlot = node(row, 'div', 'tk-creator-cover-slot');
+        const coverUrl = safeHttpUrl(video.cover);
+        const coverPh = node(coverSlot, 'div', 'tk-creator-cover tk-creator-cover-ph' + (coverUrl ? ' hidden' : ''));
+        if (coverUrl) {
+          const image = node(coverSlot, 'img', 'tk-creator-cover');
+          image.alt = '';
+          image.loading = 'lazy';
+          image.referrerPolicy = 'no-referrer';
+          image.addEventListener('error', () => {
+            image.remove();
+            coverPh.classList.remove('hidden');
+          }, { once: true });
+          image.src = coverUrl;
+        }
         const body = node(row, 'div', 'tk-creator-item-body');
         const pageUrl = video.pageUrl || ('https://www.tiktok.com/@' + encodeURIComponent(creator?.username || '') + '/video/' + video.id);
         const titleLink = node(body, 'a', 'tk-creator-item-title tk-link', creatorVideoTitle(video));
@@ -1454,12 +1734,18 @@
         const footer = node(body, 'div', 'tk-creator-item-footer');
         const meta = [video.author ? '@' + video.author : '', formatDate(video.publishTime), video.duration ? formatDuration(video.duration) : ''].filter(Boolean).join(' · ');
         node(footer, 'span', 'tk-creator-item-meta', meta || 'ID ' + video.id);
-        const downloaded = done.has(video.id);
-        const hasResource = mediaResources(video, 'video').length > 0;
-        node(footer, 'span', 'tk-status-pill ' + (downloaded ? 'done' : failed.has(video.id) ? 'failed' : hasResource ? 'ready' : 'pending'),
-          downloaded ? t('statusDownloaded') : failed.has(video.id) ? t('statusFailed') : hasResource ? t('canDownload') : t('waitResource'));
+        const latest = latestByVideo.get(video.id);
+        const activeStatus = latest && ['waiting', 'downloading', 'paused'].includes(latest.status) ? latest.status : '';
+        const latestFailed = latest?.status === 'failed';
+        const downloaded = latest?.status === 'completed';
+        const canSave = hasDownloadableVideo(video);
+        const pillKind = activeStatus ? 'pending' : latestFailed ? 'failed' : downloaded ? 'done' : canSave ? 'ready' : 'pending';
+        const pillText = activeStatus ? taskStatusLabel({ status: activeStatus })
+          : latestFailed ? t('statusFailed')
+            : downloaded ? t('statusDownloaded')
+              : canSave ? t('canDownload') : t('waitResource');
+        node(footer, 'span', 'tk-status-pill ' + pillKind, pillText);
       });
-      if (visible.length > 200) node(creatorRows, 'p', 'tk-muted', t('listTruncated', { count: all.length }));
       updateSelectionLabel();
       updateCreatorStats();
     }).catch(() => {});
@@ -1840,15 +2126,15 @@
     languageSelect.className = 'tk-dl-settings-select';
     languageSelect.setAttribute('aria-label', t('language'));
     [
-      ['zh-CN', t('chinese')],
-      ['en', t('english')]
+      ['en', t('english')],
+      ['zh-CN', t('chinese')]
     ].forEach(([value, label]) => {
       const option = document.createElement('option');
       option.value = value;
       option.textContent = label;
       languageSelect.appendChild(option);
     });
-    languageSelect.value = DownloaderKit.i18n?.language?.() || 'zh-CN';
+    languageSelect.value = DownloaderKit.i18n?.language?.() || 'en';
     languageSelect.addEventListener('mousedown', () => setThemeMenuOpen(false));
     languageSelect.addEventListener('change', () => {
       const value = languageSelect.value === 'en' ? 'en' : 'zh-CN';
@@ -2160,6 +2446,7 @@
     if (snapshot !== payload) return;
     if (snapshot.kind === 'video' && snapshot.video?.id) {
       const item = { ...snapshot.video, author: snapshot.video.author || creator?.displayName || '' };
+      rememberVideoInfo(item);
       mergeCreatorVideos([item]);
     }
     if (snapshot.kind === 'creator' && Array.isArray(snapshot.videos)) mergeCreatorVideos(snapshot.videos);
@@ -2176,7 +2463,11 @@
       activeMode = snapshot.kind === 'creator' ? 'creator' : 'video';
       renderView();
     } else if (activeMode === 'video') renderView();
-    else if (activeMode === 'creator') updateCreatorStats();
+    else if (activeMode === 'creator') {
+      updateCreatorStats();
+      refreshCreatorAvatar();
+      requestMissingResources();
+    }
     publishPopupInfo();
   }
 
@@ -2185,6 +2476,11 @@
     if (event.data?.source === SOURCE && event.data?.type === 'SNAPSHOT') {
       pageAgentVersion = Number(event.data.version) || 0;
       onPageSnapshot(event.data.payload).catch((error) => console.error('[TikTokDL] snapshot failed', error));
+    }
+    if (event.data?.source === SOURCE && event.data?.type === 'RESOLVE_IDLE') {
+      if (Number(event.data.epoch) !== resourceResolveEpoch) return;
+      resourceResolveBusy = false;
+      syncResourceHint(lastPendingResources);
     }
   });
   window.addEventListener('popstate', () => {
@@ -2226,8 +2522,8 @@
       }
       clearTimeout(taskRefreshTimer);
       taskRefreshTimer = setTimeout(() => {
-        if (activeMode === 'video') refreshJobPanel().catch(() => {});
-        if (activeMode === 'creator' && (kind === 'terminal' || kind === 'history')) renderCreatorRows();
+        refreshJobPanel().catch(() => {});
+        if (activeMode === 'creator' && kind !== 'progress') renderCreatorRows();
       }, kind === 'progress' ? 900 : 350);
       return false;
     }
@@ -2236,14 +2532,14 @@
 
   let completionNotesReady = false;
   async function refreshCompletionNotes() {
-    const history = await getHistory().catch(() => []);
-    const completedItems = history.filter((item) => item.status === 'completed');
+    const [history, queued] = await Promise.all([getHistory().catch(() => []), getTasks().catch(() => [])]);
+    const completedItems = [...queued, ...history].filter((item) => item.status === 'completed');
     const completed = new Set(completedItems.map((item) => item.id));
     if (completionNotesReady) {
-      const fresh = completedItems.find((item) => !knownCompletedIds.has(item.id));
+      const fresh = completedItems.find((item) => !knownCompletedIds.has(item.id) && taskQueue(item) === currentQueue());
       if (fresh) {
         shell.noteSuccess();
-        if (activeMode === 'video') showSavedStatus(fresh);
+        showSavedStatus(fresh);
       }
     }
     knownCompletedIds = completed;
@@ -2287,6 +2583,7 @@
     }
   });
   loadPrefs().then(() => renderView()).catch(() => {});
+  loadVideoInfoCache().catch(() => {});
   DownloaderKit.i18n?.ready?.then(() => applyLanguage()).catch(() => {});
   DownloaderKit.i18n?.onChange?.(applyLanguage);
   refreshCompletionNotes().catch(() => {});

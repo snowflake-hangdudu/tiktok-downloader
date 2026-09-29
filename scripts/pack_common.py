@@ -8,11 +8,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIRS = {
-    "_locales", "assets", "content", "docs", "icons", "lib", "popup", "shared", "social", "rules"
+    "_locales", "assets", "content", "icons", "lib", "popup", "shared"
 }
 RUNTIME_ROOT_FILES = {"background.js"}
-EXCLUDE_PARTS = {"test", "tests", "store", "scripts", "node_modules", ".git", "_metadata", "previews", "acceptance"}
-EXCLUDE_NAMES = {".gitignore", ".DS_Store", "Thumbs.db"}
+EXCLUDE_PARTS = {"test", "tests", "store", "scripts", "node_modules", ".git", "_metadata", "previews", "acceptance", "template"}
+EXCLUDE_NAMES = {".gitignore", ".DS_Store", "Thumbs.db", "popup-config.example.js", "icon-source.png"}
 FORBIDDEN_SUFFIXES = {".zip", ".xpi", ".pem", ".key", ".p12", ".map"}
 DEBUG_FLAG = re.compile(r"(DownloaderKit\.DEBUG\s*=\s*)(?:true|false)(\s*;\s*//\s*@pack:debug)")
 
