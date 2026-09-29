@@ -743,8 +743,40 @@
     }
   }
 
+  function creatorUsername() {
+    const fromState = String(snapshot.creator?.username || creator?.username || '').trim().replace(/^@/, '');
+    if (fromState) return fromState;
+    const path = String(location.pathname || '');
+    const match = path.match(/^\/@([^/]+)/i);
+    if (match) {
+      try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
+    }
+    const pageUrl = String(currentVideo()?.pageUrl || '');
+    const fromVideo = pageUrl.match(/\/@([^/]+)/i);
+    if (fromVideo) {
+      try { return decodeURIComponent(fromVideo[1]); } catch (_) { return fromVideo[1]; }
+    }
+    return '';
+  }
+
+  function creatorProfileUrl(username) {
+    const name = String(username || creatorUsername()).replace(/^@/, '').trim();
+    return name ? (location.origin + '/@' + encodeURIComponent(name)) : '';
+  }
+
+  function openCreatorProfile(event) {
+    const href = creatorProfileUrl();
+    if (!href) return;
+    if (event) event.preventDefault();
+    location.assign(href);
+  }
+
+  function videoPageCreatorAvailable() {
+    return snapshot.kind === 'video' && Boolean(creatorUsername());
+  }
+
   function syncModeTabs() {
-    const showCreator = creatorPageAvailable() || snapshot.kind === 'creator';
+    const showCreator = creatorPageAvailable() || videoPageCreatorAvailable();
     modeTabsEl.classList.toggle('hidden', !showCreator);
     if (!showCreator && activeMode === 'creator') activeMode = 'video';
     modeTabsEl.querySelectorAll('[data-mode]').forEach((button) => {
@@ -900,7 +932,7 @@
       videoContentEl?.classList.remove('hidden');
       if (coverBtnEl) coverBtnEl.disabled = true;
       if (titleEl) titleEl.textContent = title;
-      if (authorEl) { authorEl.textContent = ''; authorEl.classList.add('hidden'); }
+      if (authorEl) { authorEl.replaceChildren(); authorEl.classList.add('hidden'); }
       if (subEl) subEl.textContent = detail;
       return;
     }
@@ -919,8 +951,16 @@
     const authorName = video.author || creator?.displayName || creator?.username || '';
     if (authorEl) {
       const authorLooksBad = !authorName || /^x{3,}$/i.test(authorName);
-      authorEl.textContent = authorLooksBad ? '' : t('authorBy', { author: authorName });
-      authorEl.classList.toggle('hidden', authorLooksBad);
+      authorEl.replaceChildren();
+      if (authorLooksBad) {
+        authorEl.classList.add('hidden');
+      } else {
+        node(authorEl, 'span', 'tk-dl-author-label', t('authorLabel') + ' · ');
+        const href = creatorProfileUrl();
+        const nameNode = node(authorEl, href ? 'a' : 'span', 'tk-dl-author-link', authorName);
+        if (href) nameNode.href = href;
+        authorEl.classList.remove('hidden');
+      }
     }
     const published = formatPublishTime(video.publishTime);
     if (subEl) {
@@ -1457,13 +1497,29 @@
     return '';
   }
 
+  function renderCreatorGate(parent) {
+    const profile = creator || snapshot.creator || null;
+    const username = creatorUsername();
+    const href = creatorProfileUrl(username);
+    const card = node(parent, 'section', 'tk-empty-card tk-creator-gate');
+    const displayName = String(profile?.displayName || username || '').trim();
+    node(card, 'strong', '', t('creatorGateTitle'));
+    node(card, 'p', '', username
+      ? t('creatorGateDetail')
+      : t('notCreatorPageDetail'));
+    if (username) {
+      node(card, 'p', 'tk-creator-gate-handle', displayName && displayName.toLowerCase() !== username.toLowerCase()
+        ? displayName + ' · @' + username
+        : '@' + username);
+    }
+    if (href) button(card, t('openCreatorPage'), 'tk-button tk-primary', openCreatorProfile);
+  }
+
   function renderCreatorView(parent) {
     const profile = creator || snapshot.creator || null;
     if (profile && creatorCollectionId(profile) !== creatorKey) loadCreatorVideos(profile).catch(() => {});
     if (!creatorPageAvailable()) {
-      const empty = node(parent, 'section', 'tk-empty-card');
-      node(empty, 'strong', '', t('notCreatorPage'));
-      node(empty, 'p', '', t('notCreatorPageDetail'));
+      renderCreatorGate(parent);
       return;
     }
 

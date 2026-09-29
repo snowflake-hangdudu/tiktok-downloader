@@ -236,6 +236,27 @@
   text-overflow: ellipsis;
 }
 
+.dl-kit .tk-dl-author-label {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.dl-kit .tk-dl-author-link,
+#tiktok-dl-root .tk-dl-author-link {
+  color: var(--brand-strong);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dl-kit .tk-dl-author-link:hover,
+.dl-kit .tk-dl-author-link:focus-visible,
+#tiktok-dl-root .tk-dl-author-link:hover,
+#tiktok-dl-root .tk-dl-author-link:focus-visible {
+  color: var(--brand-hover);
+  text-decoration: underline;
+}
+
 .dl-kit .tk-dl-video-sk {
   display: flex;
   flex-direction: column;
@@ -1507,6 +1528,15 @@
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.dl-kit .tk-creator-gate .tk-button {
+  margin-top: 6px;
+}
+
+.dl-kit .tk-creator-gate-handle {
+  color: var(--brand-strong);
+  font-weight: 600;
 }
 
 .dl-kit .tk-empty-icon {
