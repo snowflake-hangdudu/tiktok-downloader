@@ -8,7 +8,7 @@
     defaultQuality: 'highest',
     defaultFormat: 'mp4',
     maxConcurrentDownloads: 2,
-    filenameTemplate: '{author} - {title}',
+    filenameTemplate: '{title} - {author}',
     skipDownloaded: true,
     recordHistory: true,
     showFloatingButton: true,
@@ -49,6 +49,7 @@
   let taskRefreshTimer = 0;
   let completionRefreshTimer = 0;
   let pageAgentVersion = 0;
+  let settingsBody = null;
 
   const shell = DownloaderKit.shell.mount({
     title: 'TikTok 下载助手',
@@ -66,6 +67,7 @@
       variant: 'actions',
       showHelpLinks: false,
       showSettings: true,
+      showNotice: false,
       showDiagnostics: false,
       faqUrl: 'https://snowflake-hangdudu.github.io/tiktok-downloader/faq.html',
       privacyUrl: 'https://snowflake-hangdudu.github.io/tiktok-downloader/',
@@ -76,7 +78,7 @@
     onFeedback: copyFeedbackEmail,
     defaults: {
       notice: {
-        enabled: true,
+        enabled: false,
         title: '公告',
         pinned: ['仅保存你在 TikTok 页面中可正常访问、且有权保存的公开内容。'],
         recent: ['下载失败会自动更换备用地址。没有独立音频时，不显示音频选项。'],
@@ -103,9 +105,9 @@
   const ui = document.createElement('div');
   ui.className = 'tk-dl';
   ui.innerHTML = `
-    <div class="tk-dl-mode-tabs hidden" role="tablist" aria-label="下载模式">
-      <button type="button" data-mode="video" class="active" role="tab" aria-selected="true">单视频</button>
-      <button type="button" data-mode="creator" role="tab" aria-selected="false">创作者</button>
+    <div class="tk-dl-mode-tabs hidden" role="tablist" data-i18n-aria="modeLabel" aria-label="下载模式">
+      <button type="button" data-mode="video" class="active" role="tab" aria-selected="true" data-i18n="singleVideo">单视频</button>
+      <button type="button" data-mode="creator" role="tab" aria-selected="false" data-i18n="creator">创作者</button>
     </div>
     <div class="tk-dl-video-body">
       <div class="tk-dl-video-card is-loading">
@@ -117,7 +119,7 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             </div>
           </div>
-          <button type="button" class="tk-dl-cover-download" disabled>下载封面</button>
+          <button type="button" class="tk-dl-cover-download" disabled data-i18n="coverDownload">下载封面</button>
         </div>
         <div class="tk-dl-video-meta">
           <div class="tk-dl-video-sk">
@@ -132,43 +134,46 @@
           </div>
         </div>
       </div>
-      <div class="tk-dl-section">
-        <div class="tk-dl-section-head">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-          清晰度
+      <div class="tk-dl-options-row">
+        <div class="tk-dl-section tk-dl-quality-section">
+          <div class="tk-dl-section-head">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            <span data-i18n="quality">清晰度</span>
+          </div>
+          <div class="tk-dl-quality-pills"><span class="tk-dl-pill loading" data-i18n="loading">加载中</span></div>
         </div>
-        <div class="tk-dl-quality-pills"><span class="tk-dl-pill loading">加载中</span></div>
-      </div>
-      <div class="tk-dl-format-row tk-dl-section">
-        <div class="tk-dl-section-head tk-dl-format-label">格式</div>
-        <div class="tk-dl-format-pills">
-          <button type="button" class="tk-dl-pill active" data-format="mp4" aria-pressed="true">MP4 视频</button>
-          <button type="button" class="tk-dl-pill hidden" data-format="m4a" aria-pressed="false">M4A 音频</button>
+        <div class="tk-dl-format-row tk-dl-section">
+          <div class="tk-dl-section-head tk-dl-format-label" data-i18n="format">格式</div>
+          <div class="tk-dl-format-pills">
+            <button type="button" class="tk-dl-pill active" data-format="mp4" aria-pressed="true" data-i18n="mp4">MP4 视频</button>
+            <button type="button" class="tk-dl-pill hidden" data-format="m4a" aria-pressed="false" data-i18n="m4a">M4A 音频</button>
+          </div>
         </div>
       </div>
-      <p class="tk-dl-filename-preview" aria-live="polite">文件名预览会在识别视频后显示</p>
+      <p class="tk-dl-filename-preview" aria-live="polite" data-i18n="filenamePending">文件名预览会在识别视频后显示</p>
       <div class="tk-dl-estimate hidden">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        <span class="tk-dl-estimate-text">预计大小 —</span>
+        <span class="tk-dl-estimate-text" data-i18n="estimateEmpty">预计大小 —</span>
       </div>
       <button type="button" class="tk-dl-btn tk-dl-start" disabled>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        <span class="tk-dl-start-label">开始下载</span>
+        <span class="tk-dl-start-label" data-i18n="startDownload">开始下载</span>
       </button>
       <div class="tk-dl-job-panel hidden">
         <div class="tk-dl-job-list"></div>
         <div class="tk-dl-job-panel-queue hidden">
-          <button type="button" class="tk-dl-action-btn" data-bulk="pause-all">暂停全部</button>
-          <button type="button" class="tk-dl-action-btn danger" data-bulk="cancel-waiting">取消等待</button>
+          <button type="button" class="tk-dl-action-btn" data-bulk="pause-all" data-i18n="pauseAll">暂停全部</button>
+          <button type="button" class="tk-dl-action-btn danger" data-bulk="cancel-waiting" data-i18n="cancelWaiting">取消等待</button>
         </div>
       </div>
+      <div class="tk-status" hidden role="status"></div>
       <details class="tk-dl-debug">
-        <summary>调试日志</summary>
+        <summary data-i18n="debugLog">调试日志</summary>
         <div class="tk-dl-debug-actions">
-          <button type="button" class="tk-dl-debug-copy">复制日志</button>
-          <button type="button" class="tk-dl-debug-clear">清空</button>
+          <button type="button" class="tk-dl-debug-copy" data-i18n="copyLog">复制日志</button>
+          <button type="button" class="tk-dl-debug-clear" data-i18n="clearLog">清空</button>
         </div>
-        <pre class="tk-dl-debug-log">等待下载操作…</pre>
+        <pre class="tk-dl-debug-log" data-i18n="waitingDownload">等待下载操作…</pre>
       </details>
     </div>
     <div class="tk-dl-creator-body hidden"></div>
@@ -198,10 +203,10 @@
   const startLabelEl = ui.querySelector('.tk-dl-start-label');
   const jobPanelEl = ui.querySelector('.tk-dl-job-panel');
   const jobListEl = ui.querySelector('.tk-dl-job-list');
-  appStatus = node(ui, 'div', 'tk-status');
-  appStatus.setAttribute('role', 'status');
-  appStatus.setAttribute('aria-live', 'polite');
-
+  appStatus = ui.querySelector('.tk-status');
+  if (appStatus) {
+    appStatus.setAttribute('role', 'status');
+  }
   modeTabsEl.querySelectorAll('[data-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       activeMode = button.dataset.mode || 'video';
@@ -263,17 +268,50 @@
     return label;
   }
 
+  function openBrowserDownloads() {
+    return send('TIKTOK_DL_OPEN_DOWNLOADS').catch(() => null);
+  }
+
   function setStatus(message, kind) {
     if (!appStatus) return;
-    appStatus.textContent = message || '';
+    clearTimeout(setStatus.timer);
+    appStatus.replaceChildren();
     appStatus.dataset.kind = kind || 'info';
     appStatus.hidden = !message;
-    if (message) {
-      clearTimeout(setStatus.timer);
-      setStatus.timer = setTimeout(() => {
-        if (appStatus) appStatus.hidden = true;
-      }, 5000);
+    if (!message) return;
+    appStatus.appendChild(document.createTextNode(String(message)));
+    if (kind === 'success') {
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'tk-status-action';
+      action.textContent = t('viewDownloads');
+      action.addEventListener('click', () => { openBrowserDownloads(); });
+      appStatus.appendChild(action);
+      return;
     }
+    setStatus.timer = setTimeout(() => {
+      if (appStatus) appStatus.hidden = true;
+    }, 5000);
+  }
+
+  function displayLabelForTask(task) {
+    const filename = String(task?.filename || '').split(/[/\\]/).pop().trim();
+    let title = String(task?.title || '').trim();
+    if (/TikTok\s*下载助手|TikTok Downloader|开始下载|Start download|清晰度|Quality|保存为|Save as|查看浏览器下载记录|View browser downloads/.test(title)) title = '';
+    if (/\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(title)) title = '';
+    const letters = title.replace(/\s+/g, '');
+    const masked = (letters.match(/x/gi) || []).length;
+    if (letters.length >= 4 && masked / letters.length >= 0.7) title = '';
+    const pick = filename || title || t('tiktokVideo');
+    return pick.length > 72 ? pick.slice(0, 69) + '…' : pick;
+  }
+
+  function showSavedStatus(task) {
+    const id = String(task?.id || '');
+    if (!id || showSavedStatus.lastId === id) return;
+    showSavedStatus.lastId = id;
+    const label = task?.type === 'audio' ? 'M4A' : task?.type === 'cover' ? t('coverType') : 'MP4';
+    setStatus(t('savedFile', { label, name: displayLabelForTask(task) }), 'success');
   }
 
   function setFabVisible(visible) {
@@ -313,7 +351,7 @@
 
   async function send(type, extra) {
     const result = await DownloaderKit.runtime.sendMessage({ type, ...(extra || {}) }, EXT);
-    if (result?.ok === false) throw new Error(result.error || '操作失败');
+    if (result?.ok === false) throw new Error(result.error || t('actionFailed'));
     return result || {};
   }
 
@@ -367,6 +405,22 @@
     return date.toLocaleDateString();
   }
 
+  function formatPublishTime(value) {
+    const date = new Date(value);
+    const time = date.getTime();
+    if (!Number.isFinite(time)) return '';
+    const minutes = Math.floor(Math.max(0, Date.now() - time) / 60000);
+    if (minutes < 1) return t('justNow');
+    if (minutes < 60) return t('minutesAgo', { n: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t('hoursAgo', { n: hours });
+    const days = Math.floor(hours / 24);
+    if (days < 30) return t('daysAgo', { n: days });
+    const months = Math.floor(days / 30);
+    if (months < 12) return t('monthsAgo', { n: months });
+    return t('yearsAgo', { n: Math.floor(months / 12) });
+  }
+
   function formatBytes(value) {
     const n = Number(value) || 0;
     if (n < 1024) return n + ' B';
@@ -407,10 +461,16 @@
     return list;
   }
 
+  function displayQuality(value) {
+    const raw = String(value || '').trim();
+    if (!raw || raw === '原始资源' || raw === 'Original') return t('originalQuality');
+    return raw;
+  }
+
   function resourceLabel(resource) {
     const codec = String(resource?.codec || '');
     const codecLabel = /265|hevc/i.test(codec) ? 'HEVC' : /264|avc/i.test(codec) ? 'H.264' : '';
-    return [resource?.quality || '原始资源', codecLabel || resource?.source || ''].filter(Boolean).join(' · ');
+    return [displayQuality(resource?.quality), codecLabel].filter(Boolean).join(' · ');
   }
 
   const debugLines = [];
@@ -425,27 +485,29 @@
   ui.querySelector('.tk-dl-debug-copy')?.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const text = debugLines.join('\n') || '暂无日志';
+    const text = debugLines.join('\n') || t('noLogs');
     try {
       await navigator.clipboard.writeText(text);
-      panelDebug('日志已复制');
+      panelDebug(t('logCopied'));
     } catch (error) {
-      panelDebug('复制失败：' + (error?.message || error));
+      panelDebug(t('copyFailed', { error: error?.message || error }));
     }
   });
   ui.querySelector('.tk-dl-debug-clear')?.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
     debugLines.length = 0;
-    if (debugLogEl) debugLogEl.textContent = '日志已清空';
+    if (debugLogEl) debugLogEl.textContent = t('logCleared');
   });
 
   function qualityPillLabel(resource) {
+    const width = Number(resource?.width) || 0;
     const height = Number(resource?.height) || 0;
     const codec = String(resource?.codec || '');
     const codecLabel = /265|hevc|hvc/i.test(codec) ? 'HEVC' : /264|avc/i.test(codec) ? 'H.264' : '';
-    const base = height ? height + 'P' : '';
-    return [base, codecLabel].filter(Boolean).join(' ') || '视频';
+    const resolution = width && height ? Math.min(width, height) : height || width;
+    const base = resolution ? resolution + 'P' : '';
+    return [base, codecLabel].filter(Boolean).join(' ') || t('videoWord');
   }
 
   function resourceSourceRank(resource) {
@@ -487,13 +549,25 @@
   async function taskFilename(video, quality, format) {
     await shell.settings?.ready;
     const meta = {
-      title: video.title || 'TikTok video',
-      author: video.author || video.authorId || 'TikTok',
+      title: (() => {
+        const raw = String(video.title || '').trim();
+        if (!raw || /TikTok\s*下载助手|TikTok Downloader|开始下载|Start download|清晰度|Quality|保存为|Save as/.test(raw) || /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(raw)) {
+          return video.author || video.authorId || 'TikTok video';
+        }
+        const letters = raw.replace(/\s+/g, '');
+        const masked = (letters.match(/x/gi) || []).length;
+        if (letters.length >= 4 && masked / letters.length >= 0.7) return video.author || video.authorId || 'TikTok video';
+        return raw;
+      })(),
+      author: (() => {
+        const raw = String(video.author || video.authorId || 'TikTok').trim();
+        return /^x{3,}$/i.test(raw) ? 'TikTok' : raw;
+      })(),
       id: video.id || '',
       video_id: video.id || '',
       date: (video.publishTime || new Date().toISOString()).slice(0, 10),
-      quality: quality || '原始资源',
-      resolution: quality || '原始资源'
+      quality: displayQuality(quality),
+      resolution: displayQuality(quality)
     };
     let name = shell.settings?.filename(meta, format) || ('TikTok - ' + meta.title + '.' + format);
     if (prefs.creatorFolders && video.author) name = 'TikTok Downloads/' + creatorFolderName(video.author) + '/' + name;
@@ -507,7 +581,7 @@
 
   async function enqueue(video, type, resource, options) {
     const opts = options || {};
-    if (!video?.id) throw new Error('未读取到视频 ID');
+    if (!video?.id) throw new Error(t('noVideoId'));
     let url = '';
     let backupUrls = [];
     let quality = '';
@@ -515,27 +589,22 @@
     if (type === 'cover') {
       url = safeMediaUrl(video.cover);
       format = imageExtension(url);
-      quality = '封面';
+      quality = t('coverType');
     } else {
       if (type === 'audio' && !isValidAudioResource(resource, video)) {
-        throw new Error('当前页面没有可单独下载的音频。TikTok 未提供独立音轨时，请下载视频。');
+        throw new Error(t('noSeparateAudio'));
       }
       url = safeMediaUrl(resource?.url);
       backupUrls = (Array.isArray(resource?.backupUrls) ? resource.backupUrls : [])
         .map(safeMediaUrl).filter((candidate) => candidate && candidate !== url);
-      quality = resource?.quality || '原始资源';
+      quality = resource?.quality || t('originalQuality');
       format = type === 'video' ? 'mp4' : audioExtension(resource);
     }
-    if (!url) throw new Error(type === 'cover' ? '当前视频没有可用封面' : '当前页面没有识别到可下载资源');
+    if (!url) throw new Error(type === 'cover' ? t('noCover') : t('noResource'));
 
     const duplicate = await isSuccessfulDuplicate(video, type);
-    let forceDuplicate = false;
-    if (duplicate) {
-      if (opts.batch && prefs.skipDownloaded) return { skipped: true };
-      const date = formatDate(duplicate.time) || '之前';
-      if (!window.confirm('该' + (type === 'cover' ? '封面' : '视频') + '已于 ' + date + ' 保存。仍然下载吗？')) return { skipped: true };
-      forceDuplicate = true;
-    }
+    if (duplicate && opts.batch && prefs.skipDownloaded) return { skipped: true };
+    const forceDuplicate = Boolean(duplicate);
 
     let filename = await taskFilename(video, quality, format);
     if (format && !filename.toLowerCase().endsWith('.' + String(format).toLowerCase())) {
@@ -561,15 +630,16 @@
     };
     const result = await send('TIKTOK_DL_QUEUE_ADD', { tasks: [task] });
     if (result.added) {
-      setStatus('已加入下载队列：' + filename, 'success');
+      setStatus('', '');
+      showSavedStatus.lastId = '';
       refreshJobPanel().catch(() => {});
       return { added: true };
     }
     if (result.skipped) {
-      setStatus('该任务已在队列中，或下载地址已失效。请重新打开视频识别后再试。', 'warn');
+      setStatus(t('alreadyQueued'), 'warn');
       return { skipped: true };
     }
-    throw new Error('没有任务进入下载队列');
+    throw new Error(t('noQueue'));
   }
 
   async function enqueueCreatorSelection() {
@@ -594,7 +664,7 @@
         url: resource.url,
         backupUrls: (Array.isArray(resource.backupUrls) ? resource.backupUrls : []).map(safeMediaUrl).filter(Boolean),
         type: 'video',
-        quality: resource.quality || '原始资源',
+        quality: displayQuality(resource.quality),
         format: 'mp4',
         filename: '',
         coverUrl: safeHttpUrl(video.cover),
@@ -604,16 +674,16 @@
     });
     for (const task of tasks) task.filename = await taskFilename(creatorVideos.get(task.videoId), task.quality, 'mp4');
     if (!tasks.length) {
-      setStatus(missing ? '已选视频尚未提供可用资源，请继续扫描或打开视频页识别。' : '没有可加入队列的视频。', 'warn');
+      setStatus(missing ? t('noSelectedResource') : t('noSelectedVideos'), 'warn');
       return;
     }
     const result = await send('TIKTOK_DL_QUEUE_ADD', { tasks });
     const notes = [];
-    if (result.added) notes.push('已加入 ' + result.added + ' 个任务');
-    if (already) notes.push('跳过已下载 ' + already + ' 个');
-    if (missing) notes.push('缺少可用资源 ' + missing + ' 个');
-    if (result.skipped) notes.push('队列去重 ' + result.skipped + ' 个');
-    setStatus(notes.join(' · ') || '没有新增任务', result.added ? 'success' : 'warn');
+    if (result.added) notes.push(t('addedTasks', { count: result.added }));
+    if (already) notes.push(t('skippedDownloaded', { count: already }));
+    if (missing) notes.push(t('missingResource', { count: missing }));
+    if (result.skipped) notes.push(t('queueDeduped', { count: result.skipped }));
+    setStatus(notes.join(' · ') || t('noNewTasks'), result.added ? 'success' : 'warn');
     if (result.added) {
       selectedIds.clear();
       renderCreatorRows();
@@ -654,8 +724,8 @@
     if (!pillsEl) return;
     pillsEl.replaceChildren();
     if (!list.length) {
-      const empty = node(pillsEl, 'span', 'tk-dl-pill disabled', selectedFormat === 'm4a' ? '无独立音频' : '无可用清晰度');
-      empty.textContent = selectedFormat === 'm4a' ? '无独立音频' : '无可用清晰度';
+      const empty = node(pillsEl, 'span', 'tk-dl-pill disabled', selectedFormat === 'm4a' ? t('noAudio') : t('noQuality'));
+      empty.textContent = selectedFormat === 'm4a' ? t('noAudio') : t('noQuality');
       return;
     }
     const preferred = pickResource(video, list);
@@ -681,39 +751,46 @@
     if (!estimateEl || !estimateTextEl) return;
     if (!resource) {
       estimateEl.classList.add('hidden');
-      estimateTextEl.textContent = '预计大小 —';
+      estimateTextEl.textContent = t('estimateEmpty');
       return;
     }
     estimateEl.classList.remove('hidden');
     const sizeLabel = resource.sizeBytes
       ? formatBytes(resource.sizeBytes)
       : (resource.estimatedBytes ? formatBytes(resource.estimatedBytes) : '');
-    estimateTextEl.textContent = sizeLabel ? '预计大小 约 ' + sizeLabel + ' · 仅供参考' : '预计大小 未知 · 仅供参考';
+    estimateTextEl.textContent = sizeLabel ? t('estimateAbout', { size: sizeLabel }) : t('estimateUnknown');
   }
+
+  let filenamePreviewToken = 0;
 
   function updateFilenamePreview(video, resource) {
     if (!filenamePreviewEl || !video) return;
     const format = selectedFormat === 'm4a' ? 'm4a' : 'mp4';
-    const quality = resource?.quality || '原始资源';
-    filenamePreviewEl.textContent = '文件名预览加载中…';
+    const quality = displayQuality(resource?.quality);
+    const token = ++filenamePreviewToken;
+    const videoId = video.id || '';
+    filenamePreviewEl.textContent = t('filenameLoading');
     taskFilename(video, quality, format).then((name) => {
-      if (!filenamePreviewEl.isConnected) return;
+      if (token !== filenamePreviewToken || !filenamePreviewEl.isConnected) return;
+      if ((currentVideo()?.id || '') !== videoId) return;
       filenamePreviewEl.replaceChildren();
-      node(filenamePreviewEl, 'span', 'tk-dl-filename-preview-label', '保存为：');
+      node(filenamePreviewEl, 'span', 'tk-dl-filename-preview-label', t('saveAs'));
       const nameEl = node(filenamePreviewEl, 'span', 'tk-dl-filename-preview-name', name);
       nameEl.title = name;
+      publishPopupInfo();
     }).catch(() => {
-      if (filenamePreviewEl.isConnected) filenamePreviewEl.textContent = '文件名预览暂不可用';
+      if (token !== filenamePreviewToken || !filenamePreviewEl.isConnected) return;
+      filenamePreviewEl.textContent = t('filenameUnavailable');
     });
   }
 
   function recognitionCopy() {
-    if (snapshot.kind === 'creator') return ['当前是创作者主页', '切换到「创作者」扫描公开作品。'];
-    if (snapshot.kind === 'photo' || snapshot.reason === 'photo') return ['当前是图文', '图文没有可下载的视频文件。'];
-    if (snapshot.reason === 'parse-error') return ['页面解析失败', '刷新这个 TikTok 页面后再打开面板。'];
-    if (snapshot.reason === 'no-player') return ['没有识别到正在播放的视频', '打开视频详情页，或等画面开始播放。'];
-    if (snapshot.reason === 'no-matching-item') return ['没有对上当前视频', '打开视频详情页后会显示可下载资源。'];
-    return ['等待识别 TikTok 视频', '播放或打开视频详情页后，这里会显示可下载资源。'];
+    if (snapshot.kind === 'creator') return [t('creatorPage'), t('creatorPageDetail')];
+    if (snapshot.kind === 'photo' || snapshot.reason === 'photo') return [t('photoPage'), t('photoPageDetail')];
+    if (snapshot.reason === 'parse-error') return [t('parseError'), t('parseErrorDetail')];
+    if (snapshot.reason === 'no-player') return [t('noPlayer'), t('noPlayerDetail')];
+    if (snapshot.reason === 'no-matching-item') return [t('noMatch'), t('noMatchDetail')];
+    return [t('waitVideo'), t('waitVideoDetail')];
   }
 
   function updateVideoDownloadState() {
@@ -721,12 +798,12 @@
     if (!video) {
       if (pillsEl) {
         pillsEl.replaceChildren();
-        node(pillsEl, 'span', 'tk-dl-pill loading', '加载中');
+        node(pillsEl, 'span', 'tk-dl-pill loading', t('loading'));
       }
       syncFormatPills();
       if (startBtnEl) startBtnEl.disabled = true;
       if (estimateEl) estimateEl.classList.add('hidden');
-      if (filenamePreviewEl) filenamePreviewEl.textContent = '文件名预览会在识别视频后显示';
+      if (filenamePreviewEl) filenamePreviewEl.textContent = t('filenamePending');
       return;
     }
     const videos = mediaResources(video, 'video');
@@ -738,11 +815,12 @@
       updateEstimate(resource);
       updateFilenamePreview(video, resource);
       if (startBtnEl) startBtnEl.disabled = !audio.length;
-      if (startLabelEl) startLabelEl.textContent = audio.length ? '开始下载' : '无独立音频';
+      if (startLabelEl) startLabelEl.textContent = audio.length ? t('startDownload') : t('noAudio');
+      publishPopupInfo();
       return;
     }
     renderQualityPills(video, videos);
-    const resourceSummary = '视频选项 ' + videos.length + ' 个；' + videos.map((item) => ((item.mergedHeights || [item.height]).filter(Boolean).join('/') || '?') + 'P 备用' + ((item.backupUrls || []).length)).join('，');
+    const resourceSummary = videos.length + ' video options; ' + videos.map((item) => ((item.mergedHeights || [item.height]).filter(Boolean).join('/') || '?') + 'P backups ' + ((item.backupUrls || []).length)).join(', ');
     if (resourceSummary !== panelDebug.last) {
       panelDebug.last = resourceSummary;
       panelDebug(resourceSummary);
@@ -751,7 +829,8 @@
     updateEstimate(resource);
     updateFilenamePreview(video, resource);
     if (startBtnEl) startBtnEl.disabled = !videos.length;
-    if (startLabelEl) startLabelEl.textContent = videos.length ? '开始下载' : '无可用视频';
+    if (startLabelEl) startLabelEl.textContent = videos.length ? t('startDownload') : t('noVideo');
+    publishPopupInfo();
   }
 
   function updateVideoCard() {
@@ -774,20 +853,27 @@
     cardEl.classList.remove('is-loading');
     videoSkEl?.classList.add('hidden');
     videoContentEl?.classList.remove('hidden');
-    if (titleEl) titleEl.textContent = video.title || 'TikTok 视频';
-    const authorName = creator?.username || video.author || '';
+    if (titleEl) {
+      const title = String(video.title || '').trim();
+      const authorName = video.author || creator?.displayName || creator?.username || '';
+      const titleLooksBad = !title
+    || /TikTok\s*下载助手|TikTok Downloader|开始下载|Start download|清晰度|Quality|保存为|Save as/.test(title)
+        || /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(title)
+        || ((title.replace(/\s+/g, '').match(/x/gi) || []).length / Math.max(1, title.replace(/\s+/g, '').length) >= 0.7);
+      titleEl.textContent = titleLooksBad ? (authorName ? t('authorVideo', { author: authorName }) : t('tiktokVideo')) : title;
+    }
+    const authorName = video.author || creator?.displayName || creator?.username || '';
     if (authorEl) {
-      authorEl.textContent = authorName ? '@' + authorName : '';
-      authorEl.classList.toggle('hidden', !authorName);
+      const authorLooksBad = !authorName || /^x{3,}$/i.test(authorName);
+      authorEl.textContent = authorLooksBad ? '' : t('authorBy', { author: authorName });
+      authorEl.classList.toggle('hidden', authorLooksBad);
     }
-    const metadata = [];
-    if (video.duration) metadata.push(formatDuration(video.duration));
-    if (video.publishTime) metadata.push(formatDate(video.publishTime));
+    const published = formatPublishTime(video.publishTime);
     if (subEl) {
-      subEl.textContent = metadata.join(' · ');
-      subEl.title = video.id ? 'ID ' + video.id : '';
+      subEl.textContent = published;
+      subEl.title = [video.duration ? formatDuration(video.duration) : '', formatDate(video.publishTime), video.id ? 'ID ' + video.id : ''].filter(Boolean).join(' · ');
     }
-    if (cardEl) cardEl.title = video.id ? 'ID ' + video.id : '';
+    if (cardEl) cardEl.title = [authorName, published, video.id ? 'ID ' + video.id : ''].filter(Boolean).join(' · ');
     const cover = safeHttpUrl(video.cover);
     if (cover && coverImgEl) {
       coverImgEl.src = cover;
@@ -813,53 +899,122 @@
   let jobWatchTimer = 0;
   let shownJobIds = new Set();
 
+  function jobProgressSnapshot(task) {
+    const received = Number(task.bytesReceived) || 0;
+    const total = Number(task.totalBytes) || 0;
+    const pct = task.status === 'completed'
+      ? 100
+      : (total > 0 ? Math.min(100, Math.round(received * 100 / total)) : Math.max(0, Math.min(100, Number(task.progress) || 0)));
+    const known = task.status === 'completed' || total > 0 || pct > 0;
+    const subText = total > 0
+      ? formatBytes(received) + ' / ' + formatBytes(total)
+      : (received ? formatBytes(received) : '');
+    const quality = task.format === 'm4a' ? t('m4a') : (displayQuality(task.quality) || t('videoWord'));
+    return { received, total, pct, known, subText, quality };
+  }
+
+  function bindJobActions(row, task) {
+    const actions = row.querySelector('.tk-dl-progress-actions');
+    if (!actions) return;
+    if (actions.dataset.status === task.status) return;
+    actions.dataset.status = task.status;
+    actions.replaceChildren();
+    actions.classList.toggle('hidden', task.status === 'completed');
+    if (task.status === 'completed') return;
+    taskActions(task).forEach(([action, label]) => {
+      if (!['pause', 'resume', 'cancel'].includes(action)) return;
+      const actionBtn = button(actions, label, 'tk-dl-action-btn', () => {
+        controlTask(task.id, action).then(() => refreshJobPanel()).catch((error) => setStatus(error.message, 'error'));
+      });
+      if (action === 'cancel') actionBtn.classList.add('danger');
+    });
+  }
+
+  function createJobRow(task) {
+    const snap = jobProgressSnapshot(task);
+    const row = document.createElement('div');
+    row.className = 'tk-dl-progress';
+    row.dataset.jobId = task.id;
+    const meta = node(row, 'div', 'tk-dl-progress-meta');
+    const title = node(meta, 'span', 'tk-dl-progress-title', task.title || task.filename || t('downloadTask'));
+    title.title = task.filename || task.title || '';
+    node(meta, 'span', 'tk-dl-progress-q', snap.quality);
+    const head = node(row, 'div', 'tk-dl-progress-head');
+    node(head, 'span', 'tk-dl-job-phase', taskStatusLabel(task));
+    const pctEl = node(head, 'span', 'tk-dl-job-pct', snap.known ? snap.pct + '%' : '');
+    pctEl.classList.toggle('hidden', !snap.known);
+    const sub = node(row, 'div', 'tk-dl-progress-sub' + (snap.subText ? '' : ' hidden'), snap.subText);
+    if (task.filename) sub.title = task.filename;
+    const track = node(row, 'div', 'tk-dl-progress-track');
+    const bar = node(track, 'div', 'tk-dl-progress-bar' + (snap.known ? '' : ' indeterminate') + (task.status === 'paused' ? ' paused' : ''));
+    bar.style.width = (snap.known ? snap.pct : 35) + '%';
+    node(row, 'div', 'tk-dl-progress-actions');
+    bindJobActions(row, task);
+    return row;
+  }
+
+  function updateJobRow(row, task) {
+    const snap = jobProgressSnapshot(task);
+    const title = row.querySelector('.tk-dl-progress-title');
+    if (title) {
+      const next = task.title || task.filename || t('downloadTask');
+      if (title.textContent !== next) title.textContent = next;
+      title.title = task.filename || task.title || '';
+    }
+    const qualityEl = row.querySelector('.tk-dl-progress-q');
+    if (qualityEl && qualityEl.textContent !== snap.quality) qualityEl.textContent = snap.quality;
+    const phaseEl = row.querySelector('.tk-dl-job-phase');
+    const phase = taskStatusLabel(task);
+    if (phaseEl && phaseEl.textContent !== phase) phaseEl.textContent = phase;
+    const pctEl = row.querySelector('.tk-dl-job-pct');
+    if (pctEl) {
+      const next = snap.known ? snap.pct + '%' : '';
+      if (pctEl.textContent !== next) pctEl.textContent = next;
+      pctEl.classList.toggle('hidden', !snap.known);
+    }
+    const sub = row.querySelector('.tk-dl-progress-sub');
+    if (sub) {
+      if (sub.textContent !== snap.subText) sub.textContent = snap.subText;
+      sub.classList.toggle('hidden', !snap.subText);
+      if (task.filename) sub.title = task.filename;
+    }
+    const bar = row.querySelector('.tk-dl-progress-bar');
+    if (bar) {
+      bar.classList.toggle('indeterminate', !snap.known);
+      bar.classList.toggle('paused', task.status === 'paused');
+      const width = (snap.known ? snap.pct : 35) + '%';
+      if (bar.style.width !== width) bar.style.width = width;
+    }
+    bindJobActions(row, task);
+  }
+
   async function refreshJobPanel() {
     if (!jobPanelEl || !jobListEl) return;
     const listed = await getTasks().catch(() => []);
     const active = (Array.isArray(listed) ? listed : []).filter((task) => ['waiting', 'downloading', 'paused'].includes(task.status));
     const justFinished = (Array.isArray(listed) ? listed : []).filter((task) => shownJobIds.has(task.id) && task.status === 'completed');
-    if (justFinished.length) setStatus('下载完成', 'success');
-    const tasks = active.length ? active : justFinished.slice(0, 1);
-    jobPanelEl.classList.toggle('hidden', !tasks.length);
+    if (justFinished.length) showSavedStatus(justFinished[0]);
+    const tasks = active.slice(0, 3);
+    const visible = !jobPanelEl.classList.contains('hidden');
+    const shouldShow = tasks.length > 0;
+    if (visible !== shouldShow) jobPanelEl.classList.toggle('hidden', !shouldShow);
     jobPanelEl.querySelector('.tk-dl-job-panel-queue')?.classList.toggle('hidden', active.length < 2);
     shownJobIds = new Set(active.map((task) => task.id));
     clearTimeout(jobWatchTimer);
-    if (active.length) jobWatchTimer = setTimeout(() => { refreshJobPanel().catch(() => {}); }, 1200);
-    else if (justFinished.length) jobWatchTimer = setTimeout(() => { refreshJobPanel().catch(() => {}); }, 2200);
-    jobListEl.replaceChildren();
-    tasks.slice(0, 3).forEach((task) => {
-      const received = Number(task.bytesReceived) || 0;
-      const total = Number(task.totalBytes) || 0;
-      const pct = task.status === 'completed'
-        ? 100
-        : (total > 0 ? Math.min(100, Math.round(received * 100 / total)) : Math.max(0, Math.min(100, Number(task.progress) || 0)));
-      const known = task.status === 'completed' || total > 0 || pct > 0;
-      const row = node(jobListEl, 'div', 'tk-dl-progress');
-      const meta = node(row, 'div', 'tk-dl-progress-meta');
-      const title = node(meta, 'span', 'tk-dl-progress-title', task.title || task.filename || '下载任务');
-      title.title = task.filename || task.title || '';
-      const quality = task.format === 'm4a' ? 'M4A 音频' : (task.quality || '视频');
-      node(meta, 'span', 'tk-dl-progress-q', quality);
-      const head = node(row, 'div', 'tk-dl-progress-head');
-      node(head, 'span', 'tk-dl-job-phase', taskStatusLabel(task));
-      const pctEl = node(head, 'span', 'tk-dl-job-pct', known ? pct + '%' : '');
-      pctEl.classList.toggle('hidden', !known);
-      const subText = total > 0
-        ? formatBytes(received) + ' / ' + formatBytes(total)
-        : (received ? formatBytes(received) : '');
-      const sub = node(row, 'div', 'tk-dl-progress-sub' + (subText ? '' : ' hidden'), subText);
-      if (task.filename) sub.title = task.filename;
-      const track = node(row, 'div', 'tk-dl-progress-track');
-      const bar = node(track, 'div', 'tk-dl-progress-bar' + (known ? '' : ' indeterminate') + (task.status === 'paused' ? ' paused' : ''));
-      bar.style.width = (known ? pct : 35) + '%';
-      const actions = node(row, 'div', 'tk-dl-progress-actions' + (task.status === 'completed' ? ' hidden' : ''));
-      if (task.status !== 'completed') taskActions(task).forEach(([action, label]) => {
-        if (!['pause', 'resume', 'cancel'].includes(action)) return;
-        const actionBtn = button(actions, label, 'tk-dl-action-btn', () => {
-          controlTask(task.id, action).then(() => refreshJobPanel()).catch((error) => setStatus(error.message, 'error'));
-        });
-        if (action === 'cancel') actionBtn.classList.add('danger');
-      });
+    if (active.length) jobWatchTimer = setTimeout(() => { refreshJobPanel().catch(() => {}); }, 900);
+
+    const keep = new Set(tasks.map((task) => task.id));
+    [...jobListEl.children].forEach((row) => {
+      if (!keep.has(row.dataset.jobId)) row.remove();
+    });
+    tasks.forEach((task) => {
+      let row = jobListEl.querySelector('[data-job-id="' + CSS.escape(task.id) + '"]');
+      if (!row) {
+        row = createJobRow(task);
+        jobListEl.appendChild(row);
+      } else {
+        updateJobRow(row, task);
+      }
     });
   }
 
@@ -880,6 +1035,7 @@
       return;
     }
     renderVideoView();
+    publishPopupInfo();
   }
 
   function creatorPageAvailable() {
@@ -959,6 +1115,38 @@
     }
   }
 
+  function creatorTitleLooksBad(value) {
+    const title = String(value || '').trim();
+    if (!title) return true;
+    if (/^(打开视频页|open video page|watch video|watch now|video)$/i.test(title)) return true;
+    if (/TikTok\s*下载助手|TikTok Downloader|开始下载|Start download|清晰度|Quality|保存为|Save as/.test(title)) return true;
+    if (/\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(title)) return true;
+    return ((title.replace(/\s+/g, '').match(/x/gi) || []).length / Math.max(1, title.replace(/\s+/g, '').length) >= 0.7);
+  }
+
+  function pickCreatorDomTitle(anchor, card, image) {
+    const lines = (card.innerText || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (line.length < 2 || line.length > 300) continue;
+      if (creatorTitleLooksBad(line)) continue;
+      if (/^\d{1,2}:\d{2}$/.test(line)) continue;
+      if (/^@\S+$/.test(line)) continue;
+      if (/^\d+$/.test(line)) continue;
+      return line.slice(0, 500);
+    }
+    const aria = anchor.getAttribute('aria-label') || anchor.getAttribute('title') || image?.alt || '';
+    return creatorTitleLooksBad(aria) ? '' : String(aria).slice(0, 500);
+  }
+
+  function creatorVideoTitle(video) {
+    const candidates = [video?.title, video?.description];
+    for (const candidate of candidates) {
+      const title = String(candidate || '').trim();
+      if (!creatorTitleLooksBad(title)) return title;
+    }
+    return t('tiktokVideoId', { id: video.id });
+  }
+
   function scanDomCreatorVideos() {
     if (!creatorPageAvailable()) return;
     const found = [];
@@ -974,13 +1162,17 @@
         if ((card.innerText || '').trim().length > (anchor.innerText || '').trim().length + 12) card = card.parentElement;
       }
       const image = anchor.querySelector('img') || card.querySelector('img');
-      const title = anchor.getAttribute('title') || anchor.getAttribute('aria-label') || image?.alt || (card.innerText || '').trim().split('\n').filter(Boolean)[0] || '';
+      const picked = pickCreatorDomTitle(anchor, card, image);
+      const rawTitle = picked || existing?.title || existing?.description || '';
+      const title = creatorTitleLooksBad(rawTitle) && !creatorTitleLooksBad(existing?.title)
+        ? String(existing.title).slice(0, 500)
+        : String(rawTitle).slice(0, 500);
       const creatorMatch = url.pathname.match(/^\/@([^/]+)/);
       const item = {
         id,
         pageUrl: url.href,
-        title: String(title).slice(0, 500),
-        description: String(title).slice(0, 500),
+        title,
+        description: title,
         author: creator?.displayName || creatorMatch?.[1] || '',
         authorId: creator?.id || '',
         duration: Number(existing?.duration) || 0,
@@ -998,8 +1190,8 @@
     if (profile && creatorCollectionId(profile) !== creatorKey) loadCreatorVideos(profile).catch(() => {});
     if (!creatorPageAvailable()) {
       const empty = node(parent, 'section', 'tk-empty-card');
-      node(empty, 'strong', '', '当前页面不是创作者主页');
-      node(empty, 'p', '', '打开 TikTok 创作者主页后，可扫描当前账号公开展示的作品。');
+      node(empty, 'strong', '', t('notCreatorPage'));
+      node(empty, 'p', '', t('notCreatorPageDetail'));
       return;
     }
 
@@ -1013,19 +1205,19 @@
     } else node(summary, 'div', 'tk-avatar tk-avatar-placeholder', '♪');
     const identity = node(summary, 'div', 'tk-creator-identity');
     node(identity, 'strong', '', profile?.displayName || profile?.username || 'TikTok Creator');
-    node(identity, 'span', '', '@' + (profile?.username || ''));
-    creatorStats = node(summary, 'span', 'tk-count');
+    node(identity, 'span', 'tk-creator-handle', '@' + (profile?.username || ''));
+    creatorStats = node(identity, 'span', 'tk-count');
     const scanControls = node(parent, 'div', 'tk-scan-controls');
-    const scanButton = button(scanControls, '扫描全部视频', 'tk-button tk-primary');
-    const pauseButton = button(scanControls, '暂停', 'tk-button');
-    const stopButton = button(scanControls, '停止', 'tk-button tk-danger');
+    const scanButton = button(scanControls, t('scanAll'), 'tk-button tk-primary');
+    const pauseButton = button(scanControls, t('pause'), 'tk-button');
+    const stopButton = button(scanControls, t('stop'), 'tk-button tk-danger');
     scanButton.addEventListener('click', () => {
       if (scanState === 'paused') resumeCreatorScan();
       else startCreatorScan().catch((error) => {
         scanState = 'failed';
         persistCreatorVideos();
         updateCreatorStats();
-        setStatus('扫描失败：' + error.message, 'error');
+        setStatus(t('scanFailed', { error: error.message }), 'error');
       });
     });
     pauseButton.addEventListener('click', () => pauseCreatorScan());
@@ -1035,47 +1227,49 @@
     const filters = node(parent, 'div', 'tk-filter-row');
     const search = node(filters, 'input', 'tk-input');
     search.type = 'search';
-    search.placeholder = '搜索标题或描述';
+    search.placeholder = t('searchTitleDesc');
     search.value = creatorSearch;
-    search.setAttribute('aria-label', '搜索创作者视频');
+    search.setAttribute('aria-label', t('searchCreatorVideos'));
     search.addEventListener('input', () => { creatorSearch = search.value; renderCreatorRows(); });
-    const status = node(filters, 'select', 'tk-select tk-filter');
-    status.setAttribute('aria-label', '下载状态筛选');
+    const statusWrap = node(filters, 'div', 'tk-select-wrap');
+    const status = node(statusWrap, 'select', 'tk-select tk-filter');
+    status.setAttribute('aria-label', t('filterDownloadStatus'));
     [
-      ['all', '全部状态'],
-      ['new', '未下载'],
-      ['downloaded', '已下载'],
-      ['failed', '下载失败']
+      ['all', t('statusAll')],
+      ['new', t('statusNew')],
+      ['downloaded', t('statusDownloaded')],
+      ['failed', t('statusFailed')]
     ].forEach(([value, label]) => {
       const option = node(status, 'option', '', label);
       option.value = value;
     });
     status.value = creatorStatusFilter;
     status.addEventListener('change', () => { creatorStatusFilter = status.value; renderCreatorRows(); });
-    const date = node(filters, 'select', 'tk-select tk-filter');
-    date.setAttribute('aria-label', '发布时间筛选');
-    [['all', '全部时间'], ['7', '最近 7 天'], ['30', '最近 30 天'], ['90', '最近 90 天']].forEach(([value, label]) => {
+    const dateWrap = node(filters, 'div', 'tk-select-wrap');
+    const date = node(dateWrap, 'select', 'tk-select tk-filter');
+    date.setAttribute('aria-label', t('filterPublishTime'));
+    [['all', t('timeAll')], ['7', t('time7')], ['30', t('time30')], ['90', t('time90')]].forEach(([value, label]) => {
       const option = node(date, 'option', '', label);
       option.value = value;
     });
     date.value = creatorDateFilter;
     date.addEventListener('change', () => { creatorDateFilter = date.value; renderCreatorRows(); });
     const actions = node(parent, 'div', 'tk-list-actions');
-    const selectAll = button(actions, '全选当前结果', 'tk-mini-button', () => {
+    const selectAll = button(actions, t('selectAllResults'), 'tk-mini-button', () => {
       visibleCreatorVideos().forEach((video) => selectedIds.add(video.id));
       renderCreatorRows();
     });
-    const selectNew = button(actions, '只选未下载', 'tk-mini-button', async () => {
+    const selectNew = button(actions, t('selectUndownloaded'), 'tk-mini-button', async () => {
       const history = await getHistory().catch(() => []);
       const done = new Set(history.filter((item) => item.status === 'completed' && item.type === 'video').map((item) => item.videoId));
       visibleCreatorVideos().forEach((video) => { if (!done.has(video.id)) selectedIds.add(video.id); });
       renderCreatorRows();
     });
-    button(actions, '取消选择', 'tk-mini-button', () => { selectedIds.clear(); renderCreatorRows(); });
+    button(actions, t('deselect'), 'tk-mini-button', () => { selectedIds.clear(); renderCreatorRows(); });
     creatorRows = node(parent, 'div', 'tk-creator-list');
     const selectionBar = node(parent, 'div', 'tk-selection-bar');
-    creatorSelectionStatus = node(selectionBar, 'span', '', '已选择 0 个视频');
-    const addSelected = button(selectionBar, '加入下载队列', 'tk-button tk-primary');
+    creatorSelectionStatus = node(selectionBar, 'span', '', t('selectedCount', { count: 0 }));
+    const addSelected = button(selectionBar, t('addToQueue'), 'tk-button tk-primary');
     addSelected.addEventListener('click', () => enqueueCreatorSelection().catch((error) => setStatus(error.message, 'error')));
     renderCreatorRows();
     updateScanButtons();
@@ -1085,30 +1279,24 @@
   function updateCreatorStats() {
     if (!creatorStats) return;
     const total = creatorVideos.size;
-    const downloadCount = total > 0 ? ' · ' + total + ' 个视频' : ' · 尚未扫描';
-    const stateLabel = {
-      idle: '准备就绪',
-      scanning: '正在扫描',
-      paused: '已暂停',
-      completed: '扫描完成',
-      failed: '扫描异常'
-    }[scanState] || '准备就绪';
-    creatorStats.textContent = stateLabel + downloadCount;
+    creatorStats.textContent = total > 0
+      ? t('creatorStatsShort', { state: scanStateLabel(scanState), count: total })
+      : scanStateLabel(scanState) + ' · ' + t('notScanned');
     updateScanButtons();
   }
 
   function updateScanButtons() {
     if (!creatorScanButtons) return;
     const active = scanState === 'scanning';
-    creatorScanButtons.scanButton.textContent = scanState === 'paused' ? '继续扫描' : '扫描全部视频';
+    creatorScanButtons.scanButton.textContent = scanState === 'paused' ? t('continueScan') : t('scanAll');
     creatorScanButtons.scanButton.disabled = active;
-    creatorScanButtons.pauseButton.textContent = scanPaused || scanState === 'paused' ? '继续' : '暂停';
+    creatorScanButtons.pauseButton.textContent = scanPaused || scanState === 'paused' ? t('resume') : t('pause');
     creatorScanButtons.pauseButton.disabled = !active && scanState !== 'paused';
     creatorScanButtons.stopButton.disabled = !active && scanState !== 'paused';
   }
 
   async function startCreatorScan() {
-    if (!creatorPageAvailable()) throw new Error('请先打开创作者主页');
+    if (!creatorPageAvailable()) throw new Error(t('openCreatorFirst'));
     if (creatorCollectionId(snapshot.creator) !== creatorKey) await loadCreatorVideos(snapshot.creator);
     creatorPersistenceBlocked = false;
     creatorDataCleared = false;
@@ -1171,7 +1359,7 @@
     scanPaused = false;
     scanState = 'scanning';
     if (!scanPromise) {
-      startCreatorScan().catch((error) => setStatus('扫描失败：' + error.message, 'error'));
+      startCreatorScan().catch((error) => setStatus(t('scanFailed', { error: error.message }), 'error'));
       return;
     }
     updateCreatorStats();
@@ -1181,7 +1369,7 @@
     if (scanState === 'scanning' || scanState === 'paused') {
       scanStopRequested = true;
       scanPaused = false;
-      setStatus('扫描已暂停，可继续扫描已加载作品。', 'info');
+      setStatus(t('scanPausedMsg'), 'info');
     }
   }
 
@@ -1229,19 +1417,23 @@
       visibleVideosCache = visible;
       if (creatorStats) {
         const downloadedCount = all.filter((video) => done.has(video.id)).length;
-        const stateLabel = scanState === 'scanning' ? '正在扫描' : scanState === 'paused' ? '已暂停' : scanState === 'completed' ? '扫描完成' : scanState === 'failed' ? '扫描异常' : '准备就绪';
-        creatorStats.textContent = stateLabel + ' · 共 ' + all.length + ' 个 · 已下载 ' + downloadedCount + ' 个 · 新增 ' + Math.max(0, all.length - downloadedCount) + ' 个';
+        creatorStats.textContent = t('creatorStats', {
+          state: scanStateLabel(scanState),
+          total: all.length,
+          downloaded: downloadedCount,
+          added: Math.max(0, all.length - downloadedCount)
+        });
       }
       creatorRows.replaceChildren();
       if (!visible.length) {
-        node(creatorRows, 'p', 'tk-empty-inline', all.length ? '没有符合筛选条件的视频。' : '开始扫描后，这里会显示已发现的公开视频。');
+        node(creatorRows, 'p', 'tk-empty-inline', all.length ? t('noFilterMatch') : t('scanToSee'));
       }
       visible.slice(0, 200).forEach((video) => {
         const row = node(creatorRows, 'article', 'tk-creator-item');
         const check = node(row, 'input', 'tk-checkbox');
         check.type = 'checkbox';
         check.checked = selectedIds.has(video.id);
-        check.setAttribute('aria-label', '选择 ' + (video.title || video.id));
+        check.setAttribute('aria-label', t('selectVideo', { name: video.title || video.id }));
         check.addEventListener('change', () => {
           if (check.checked) selectedIds.add(video.id);
           else selectedIds.delete(video.id);
@@ -1253,49 +1445,61 @@
         image.referrerPolicy = 'no-referrer';
         if (safeHttpUrl(video.cover)) image.src = safeHttpUrl(video.cover);
         const body = node(row, 'div', 'tk-creator-item-body');
-        node(body, 'strong', 'tk-creator-item-title', video.title || 'TikTok 视频 ' + video.id);
+        const pageUrl = video.pageUrl || ('https://www.tiktok.com/@' + encodeURIComponent(creator?.username || '') + '/video/' + video.id);
+        const titleLink = node(body, 'a', 'tk-creator-item-title tk-link', creatorVideoTitle(video));
+        titleLink.href = pageUrl;
+        titleLink.target = '_blank';
+        titleLink.rel = 'noopener noreferrer';
+        titleLink.title = t('openVideoPage');
+        const footer = node(body, 'div', 'tk-creator-item-footer');
         const meta = [video.author ? '@' + video.author : '', formatDate(video.publishTime), video.duration ? formatDuration(video.duration) : ''].filter(Boolean).join(' · ');
-        node(body, 'span', 'tk-creator-item-meta', meta || 'ID ' + video.id);
+        node(footer, 'span', 'tk-creator-item-meta', meta || 'ID ' + video.id);
         const downloaded = done.has(video.id);
         const hasResource = mediaResources(video, 'video').length > 0;
-        node(body, 'span', 'tk-status-pill ' + (downloaded ? 'done' : failed.has(video.id) ? 'failed' : hasResource ? 'ready' : 'pending'),
-          downloaded ? '已下载' : failed.has(video.id) ? '下载失败' : hasResource ? '可下载' : '等待识别资源');
-        const open = node(body, 'a', 'tk-link', '打开视频页');
-        open.href = video.pageUrl || ('https://www.tiktok.com/@' + encodeURIComponent(creator?.username || '') + '/video/' + video.id);
-        open.target = '_blank';
-        open.rel = 'noopener noreferrer';
+        node(footer, 'span', 'tk-status-pill ' + (downloaded ? 'done' : failed.has(video.id) ? 'failed' : hasResource ? 'ready' : 'pending'),
+          downloaded ? t('statusDownloaded') : failed.has(video.id) ? t('statusFailed') : hasResource ? t('canDownload') : t('waitResource'));
       });
-      if (visible.length > 200) node(creatorRows, 'p', 'tk-muted', '列表显示前 200 条；已保存总数 ' + all.length + ' 条。');
+      if (visible.length > 200) node(creatorRows, 'p', 'tk-muted', t('listTruncated', { count: all.length }));
       updateSelectionLabel();
       updateCreatorStats();
     }).catch(() => {});
   }
 
   function updateSelectionLabel() {
-    if (creatorSelectionStatus) creatorSelectionStatus.textContent = '已选择 ' + selectedIds.size + ' 个视频';
+    if (creatorSelectionStatus) creatorSelectionStatus.textContent = t('selectedCount', { count: selectedIds.size });
   }
 
   function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function scanStateLabel(state) {
+    return ({
+      idle: t('scanReady'),
+      scanning: t('scanScanning'),
+      paused: t('scanPaused'),
+      completed: t('scanCompleted'),
+      failed: t('scanError')
+    })[state] || t('scanReady');
+  }
+
   function taskStatusLabel(task) {
     return ({
-      waiting: '等待中',
-      downloading: '下载中',
-      paused: '已暂停',
-      completed: '已完成',
-      failed: '失败',
-      cancelled: '已取消'
-    })[task.status] || task.status || '未知';
+      waiting: t('statusWaiting'),
+      downloading: t('statusDownloading'),
+      paused: t('statusPaused'),
+      completed: t('statusCompleted'),
+      failed: t('statusFailed'),
+      cancelled: t('statusCancelled')
+    })[task.status] || task.status || t('statusUnknown');
   }
 
   function taskActions(task) {
-    if (task.status === 'downloading') return [['pause', '暂停'], ['cancel', '取消']];
-    if (task.status === 'paused') return [['resume', '继续'], ['cancel', '取消']];
-    if (task.status === 'waiting') return [['cancel', '取消']];
-    if (task.status === 'failed' || task.status === 'cancelled') return [['retry', '重试'], ['delete', '删除记录']];
-    if (task.status === 'completed') return [['delete', '删除记录']];
+    if (task.status === 'downloading') return [['pause', t('pause')], ['cancel', t('cancel')]];
+    if (task.status === 'paused') return [['resume', t('resume')], ['cancel', t('cancel')]];
+    if (task.status === 'waiting') return [['cancel', t('cancel')]];
+    if (task.status === 'failed' || task.status === 'cancelled') return [['retry', t('retryTask')], ['delete', t('deleteRecord')]];
+    if (task.status === 'completed') return [['delete', t('deleteRecord')]];
     return [];
   }
 
@@ -1303,11 +1507,11 @@
     parent.replaceChildren();
     const top = node(parent, 'div', 'tk-task-toolbar');
     const bulk = [
-      ['pause-all', '全部暂停'],
-      ['resume-all', '全部继续'],
-      ['cancel-waiting', '取消等待'],
-      ['retry-failed', '重试失败'],
-      ['clear-completed', '清除已完成']
+      ['pause-all', t('pauseAll')],
+      ['resume-all', t('resumeAll')],
+      ['cancel-waiting', t('cancelWaiting')],
+      ['retry-failed', t('retryFailed')],
+      ['clear-completed', t('clearCompleted')]
     ];
     bulk.forEach(([action, label]) => {
       button(top, label, 'tk-mini-button', async () => {
@@ -1321,24 +1525,24 @@
     const list = node(parent, 'div', 'tk-task-list');
     const pageControls = node(parent, 'div', 'tk-pagination');
     const status = node(parent, 'p', 'tk-muted');
-    status.textContent = '正在读取任务…';
+    status.textContent = t('readingTasks');
     getTasks().then((tasks) => {
       if (!list.isConnected) return;
       const active = tasks.filter((task) => ['waiting', 'downloading', 'paused'].includes(task.status)).length;
       const done = tasks.filter((task) => task.status === 'completed').length;
       const failed = tasks.filter((task) => task.status === 'failed').length;
-      progress.textContent = '队列 ' + active + ' · 已完成 ' + done + ' · 失败 ' + failed;
+      progress.textContent = t('queueSummary', { active, done, failed });
       if (active) {
         const banner = node(parent, 'section', 'tk-recovery-banner');
-        node(banner, 'strong', '', '检测到未完成下载任务');
-        node(banner, 'span', '', '已完成 ' + done + ' / ' + tasks.length + '，还有 ' + active + ' 个等待、暂停或下载中的任务。');
+        node(banner, 'strong', '', t('unfinishedTitle'));
+        node(banner, 'span', '', t('unfinishedDetail', { done, total: tasks.length, active }));
         const recoveryActions = node(banner, 'div', 'tk-task-actions');
-        button(recoveryActions, '继续下载', 'tk-mini-button tk-recovery-primary', async () => {
+        button(recoveryActions, t('continueDownload'), 'tk-mini-button tk-recovery-primary', async () => {
           await bulkTask('resume-all').catch((error) => setStatus(error.message, 'error'));
           renderTaskManager(parent, inSheet);
         });
-        button(recoveryActions, '放弃未完成任务', 'tk-mini-button tk-danger-text', async () => {
-          if (!window.confirm('取消所有等待中、下载中和已暂停的任务？')) return;
+        button(recoveryActions, t('abandonUnfinished'), 'tk-mini-button tk-danger-text', async () => {
+          if (!window.confirm(t('abandonConfirm'))) return;
           const latest = await getTasks().catch(() => []);
           for (const task of latest) {
             if (['waiting', 'downloading', 'paused'].includes(task.status)) {
@@ -1349,7 +1553,7 @@
         });
         parent.insertBefore(banner, progress);
       }
-      status.textContent = tasks.length ? '' : '暂无下载任务';
+      status.textContent = tasks.length ? '' : t('noTasks');
       const ordered = [...tasks].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       const pageSize = 50;
       const pageCount = Math.max(1, Math.ceil(ordered.length / pageSize));
@@ -1358,7 +1562,7 @@
       shown.forEach((task) => {
         const row = node(list, 'article', 'tk-task-item');
         const header = node(row, 'div', 'tk-task-item-header');
-        node(header, 'strong', 'tk-task-title', task.title || 'TikTok 视频');
+        node(header, 'strong', 'tk-task-title', task.title || t('tiktokVideo'));
         node(header, 'span', 'tk-status-pill ' + task.status, taskStatusLabel(task));
         const detail = [task.author ? '@' + task.author : '', task.type || 'video', task.quality, task.format?.toUpperCase()].filter(Boolean).join(' · ');
         node(row, 'p', 'tk-task-meta', detail);
@@ -1383,9 +1587,9 @@
         });
       });
       if (pageCount > 1) {
-        button(pageControls, '上一页', 'tk-mini-button', () => { taskPage = Math.max(0, taskPage - 1); renderTaskManager(parent, inSheet); }).disabled = taskPage === 0;
+        button(pageControls, t('prevPage'), 'tk-mini-button', () => { taskPage = Math.max(0, taskPage - 1); renderTaskManager(parent, inSheet); }).disabled = taskPage === 0;
         node(pageControls, 'span', 'tk-muted', (taskPage + 1) + ' / ' + pageCount);
-        button(pageControls, '下一页', 'tk-mini-button', () => { taskPage = Math.min(pageCount - 1, taskPage + 1); renderTaskManager(parent, inSheet); }).disabled = taskPage + 1 >= pageCount;
+        button(pageControls, t('nextPage'), 'tk-mini-button', () => { taskPage = Math.min(pageCount - 1, taskPage + 1); renderTaskManager(parent, inSheet); }).disabled = taskPage + 1 >= pageCount;
       }
     }).catch((error) => { status.textContent = error.message; });
     parent.appendChild(status);
@@ -1399,20 +1603,20 @@
     const toolbar = node(parent, 'div', 'tk-history-toolbar');
     const search = node(toolbar, 'input', 'tk-input');
     search.type = 'search';
-    search.placeholder = '搜索标题、创作者或视频 ID';
+    search.placeholder = t('searchHistoryPlaceholder');
     search.value = historySearch;
-    search.setAttribute('aria-label', '搜索下载历史');
+    search.setAttribute('aria-label', t('searchHistoryAria'));
     const range = node(toolbar, 'select', 'tk-select tk-filter');
-    [['all', '全部时间'], ['today', '今天'], ['7', '最近 7 天'], ['30', '最近 30 天']].forEach(([value, label]) => {
+    [['all', t('timeAll')], ['today', t('timeToday')], ['7', t('time7')], ['30', t('time30')]].forEach(([value, label]) => {
       const option = node(range, 'option', '', label);
       option.value = value;
     });
     range.value = historyRange;
-    const clear = button(toolbar, '清空历史', 'tk-mini-button tk-danger-text', async () => {
-      if (!window.confirm('清空 TikTok 下载历史？')) return;
+    const clear = button(toolbar, t('historyClear'), 'tk-mini-button tk-danger-text', async () => {
+      if (!window.confirm(t('historyClearConfirm'))) return;
       await send('TIKTOK_DL_DATA_CLEAR', { scope: 'history' });
       renderHistoryRows();
-      setStatus('下载历史已清空。', 'success');
+      setStatus(t('historyCleared'), 'success');
     });
     const list = node(parent, 'div', 'tk-history-list');
     const summary = node(parent, 'p', 'tk-muted');
@@ -1433,8 +1637,8 @@
           } else if (historyRange !== 'all' && Date.now() - time > Number(historyRange) * 86400000) return false;
           return true;
         });
-        summary.textContent = '显示 ' + Math.min(200, filtered.length) + ' / ' + filtered.length + ' 条记录';
-        if (!filtered.length) node(list, 'p', 'tk-empty-inline', '没有符合条件的下载记录。');
+        summary.textContent = t('historySummary', { shown: Math.min(200, filtered.length), total: filtered.length });
+        if (!filtered.length) node(list, 'p', 'tk-empty-inline', t('noHistoryMatch'));
         filtered.slice(0, 200).forEach((item) => {
           const row = node(list, 'article', 'tk-history-item');
           if (safeHttpUrl(item.coverUrl)) {
@@ -1445,13 +1649,13 @@
             image.referrerPolicy = 'no-referrer';
           }
           const body = node(row, 'div', 'tk-history-body');
-          node(body, 'strong', '', item.title || 'TikTok 视频');
+          node(body, 'strong', '', item.title || t('tiktokVideo'));
           node(body, 'span', 'tk-history-meta', (item.author ? '@' + item.author + ' · ' : '') + (item.type || 'video') + ' · ' + formatDate(item.time));
           node(body, 'span', 'tk-status-pill ' + item.status, taskStatusLabel(item));
           const file = node(body, 'span', 'tk-history-file', item.filename || '');
           file.title = item.filename || '';
           if (item.pageUrl) {
-            const link = node(body, 'a', 'tk-link', '重新打开视频页');
+            const link = node(body, 'a', 'tk-link', t('reopenVideo'));
             link.href = item.pageUrl;
             link.target = '_blank';
             link.rel = 'noopener noreferrer';
@@ -1463,24 +1667,45 @@
   }
 
   const FILENAME_PRESETS = {
+    'title-author': '{title} - {author}',
     'author-title': '{author} - {title}',
     title: '{title}',
     'title-id': '{title} - {id}',
-    detailed: '{author} - {title} - {quality}'
+    detailed: '{title} - {author} - {quality}'
   };
   const FILENAME_CHIPS = [
-    ['title', '标题'],
-    ['author', '作者'],
-    ['id', '视频 ID'],
-    ['quality', '清晰度'],
-    ['date', '日期']
+    ['title', 'chipTitle'],
+    ['author', 'chipAuthor'],
+    ['id', 'chipId'],
+    ['quality', 'chipQuality'],
+    ['date', 'chipDate']
   ];
 
+  function t(key, values) {
+    return DownloaderKit.i18n?.t?.(key, values) || key;
+  }
+
+  function applyLanguage() {
+    renderView();
+    const page = document.getElementById('tiktok-dl-root');
+    if (page) DownloaderKit.i18n.apply(page);
+    if (settingsBody?.isConnected) {
+      const pageTitle = document.getElementById('tiktok-dl-info-title');
+      const pageDate = document.getElementById('tiktok-dl-info-date');
+      if (pageTitle) pageTitle.textContent = t('settings');
+      if (pageDate) {
+        pageDate.textContent = t('settingsHint');
+        pageDate.hidden = false;
+      }
+      fillSettingsSheet(settingsBody);
+    }
+  }
+
   function themeChoices() {
-    const listed = shell.theme?.list?.() || [{ id: 'default', name: '默认' }];
+    const listed = shell.theme?.list?.() || [{ id: 'default', name: t('themeTikTok') }];
     return listed.map((item) => ({
       id: item.id,
-      name: item.id === 'default' ? 'TikTok主题' : item.name
+      name: item.id === 'default' ? t('themeTikTok') : (DownloaderKit.i18n?.t?.('theme-' + item.id) === 'theme-' + item.id ? item.name : t('theme-' + item.id))
     }));
   }
 
@@ -1490,7 +1715,7 @@
     const current = themeChoices().find((item) => item.id === currentId) || themeChoices()[0];
     const currentLabel = themeControl.querySelector('.tk-dl-settings-theme-current-label');
     const currentSwatch = themeControl.querySelector('.tk-dl-settings-theme-current-swatch');
-    if (currentLabel) currentLabel.textContent = current?.name || 'TikTok主题';
+    if (currentLabel) currentLabel.textContent = current?.name || t('themeTikTok');
     if (currentSwatch) currentSwatch.dataset.theme = currentId === 'default' ? 'tiktok' : currentId;
     themeControl.querySelectorAll('[data-theme-option]').forEach((option) => {
       option.setAttribute('aria-selected', String(option.dataset.themeOption === currentId));
@@ -1499,7 +1724,7 @@
 
   async function copyFeedbackEmail(email, button) {
     const label = button?.querySelector('.dl-kit-feedback-label') || button;
-    const original = label?.textContent || '反馈';
+    const original = label?.textContent || t('feedback');
     let copied = false;
     try {
       await navigator.clipboard.writeText(email);
@@ -1517,7 +1742,7 @@
       input.remove();
     }
     if (copied && label) {
-      label.textContent = '已复制';
+      label.textContent = t('copied');
       button.classList.add('is-copied');
       setTimeout(() => {
         if (!button.isConnected) return;
@@ -1527,11 +1752,12 @@
       return;
     }
     const link = document.createElement('a');
-    link.href = 'mailto:' + email + '?subject=' + encodeURIComponent('TikTok 下载助手反馈');
+    link.href = 'mailto:' + email + '?subject=' + encodeURIComponent(t('feedbackSubject'));
     link.click();
   }
 
   function fillSettingsSheet(body) {
+    settingsBody = body;
     body.replaceChildren();
     const root = document.createElement('div');
     root.className = 'tk-dl-settings';
@@ -1539,13 +1765,13 @@
     const themeRow = document.createElement('div');
     themeRow.className = 'tk-dl-settings-row';
     const themeRowLabel = document.createElement('span');
-    themeRowLabel.textContent = '主题色';
+    themeRowLabel.textContent = t('theme');
     const themeControl = document.createElement('div');
     themeControl.className = 'tk-dl-settings-theme-control';
     const themeTrigger = document.createElement('button');
     themeTrigger.type = 'button';
     themeTrigger.className = 'tk-dl-settings-theme-trigger';
-    themeTrigger.setAttribute('aria-label', '主题色');
+    themeTrigger.setAttribute('aria-label', t('theme'));
     themeTrigger.setAttribute('aria-haspopup', 'listbox');
     themeTrigger.setAttribute('aria-expanded', 'false');
     const currentSwatch = document.createElement('span');
@@ -1576,50 +1802,91 @@
         optionLabel.textContent = theme.name;
         option.append(swatch, optionLabel);
         option.addEventListener('click', async () => {
-          themeOptions.classList.add('hidden');
-          themeTrigger.setAttribute('aria-expanded', 'false');
+          setThemeMenuOpen(false);
           try {
             await shell.theme.set(theme.id);
             syncThemePicker(themeControl);
-            status.textContent = '主题已保存';
+            status.textContent = t('themeSaved');
           } catch (error) {
-            status.textContent = error?.message || '主题保存失败';
+            status.textContent = error?.message || t('themeSaveFailed');
           }
         });
         themeOptions.appendChild(option);
       });
       syncThemePicker(themeControl);
     }
+    function setThemeMenuOpen(open) {
+      themeOptions.classList.toggle('hidden', !open);
+      themeTrigger.setAttribute('aria-expanded', String(open));
+      themeControl.classList.toggle('is-open', open);
+    }
     renderThemeOptions();
     themeTrigger.addEventListener('click', () => {
-      const isOpen = !themeOptions.classList.contains('hidden');
-      themeOptions.classList.toggle('hidden', isOpen);
-      themeTrigger.setAttribute('aria-expanded', String(!isOpen));
+      setThemeMenuOpen(themeOptions.classList.contains('hidden'));
     });
     themeControl.append(themeTrigger, themeOptions);
     themeRow.append(themeRowLabel, themeControl);
     root.appendChild(themeRow);
 
-    const presetRow = document.createElement('label');
+    const languageRow = document.createElement('div');
+    languageRow.className = 'tk-dl-settings-row';
+    const languageLabel = document.createElement('span');
+    languageLabel.textContent = t('language');
+    const languageControl = document.createElement('div');
+    languageControl.className = 'tk-dl-settings-control';
+    const languageWrap = document.createElement('div');
+    languageWrap.className = 'tk-dl-settings-select-wrap';
+    const languageSelect = document.createElement('select');
+    languageSelect.className = 'tk-dl-settings-select';
+    languageSelect.setAttribute('aria-label', t('language'));
+    [
+      ['zh-CN', t('chinese')],
+      ['en', t('english')]
+    ].forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      languageSelect.appendChild(option);
+    });
+    languageSelect.value = DownloaderKit.i18n?.language?.() || 'zh-CN';
+    languageSelect.addEventListener('mousedown', () => setThemeMenuOpen(false));
+    languageSelect.addEventListener('change', () => {
+      const value = languageSelect.value === 'en' ? 'en' : 'zh-CN';
+      DownloaderKit.i18n.save(value).then(() => applyLanguage()).catch(() => {});
+    });
+    languageWrap.appendChild(languageSelect);
+    languageControl.appendChild(languageWrap);
+    languageRow.append(languageLabel, languageControl);
+    root.appendChild(languageRow);
+
+    const presetRow = document.createElement('div');
     presetRow.className = 'tk-dl-settings-row';
     const presetLabel = document.createElement('span');
-    presetLabel.textContent = '文件名';
+    presetLabel.textContent = t('filename');
+    const filenameControl = document.createElement('div');
+    filenameControl.className = 'tk-dl-settings-control';
+    const presetWrap = document.createElement('div');
+    presetWrap.className = 'tk-dl-settings-select-wrap';
     const preset = document.createElement('select');
     preset.className = 'tk-dl-settings-select';
-    preset.setAttribute('aria-label', '文件名规则');
+    preset.setAttribute('aria-label', t('filenameRule'));
+    preset.addEventListener('mousedown', () => setThemeMenuOpen(false));
     [
-      ['author-title', '默认（作者 + 标题）'],
-      ['title', '仅标题'],
-      ['title-id', '标题 + 视频 ID'],
-      ['detailed', '作者 + 标题 + 清晰度'],
-      ['custom', '自定义…']
+      ['title-author', t('presetDefault')],
+      ['author-title', t('presetAuthorTitle')],
+      ['title', t('presetTitle')],
+      ['title-id', t('presetTitleId')],
+      ['detailed', t('presetDetailed')],
+      ['custom', t('presetCustom')]
     ].forEach(([value, label]) => {
       const option = document.createElement('option');
       option.value = value;
       option.textContent = label;
       preset.appendChild(option);
     });
-    presetRow.append(presetLabel, preset);
+    presetWrap.appendChild(preset);
+    filenameControl.appendChild(presetWrap);
+    presetRow.append(presetLabel, filenameControl);
     root.appendChild(presetRow);
 
     const customBlock = document.createElement('div');
@@ -1631,8 +1898,8 @@
     template.maxLength = 180;
     template.spellcheck = false;
     template.autocomplete = 'off';
-    template.placeholder = '{author} - {title}';
-    template.setAttribute('aria-label', '自定义文件名模板');
+    template.placeholder = '{title} - {author}';
+    template.setAttribute('aria-label', t('customTemplate'));
     customBlock.appendChild(template);
     const chips = document.createElement('div');
     chips.className = 'tk-dl-settings-chips';
@@ -1640,7 +1907,7 @@
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'tk-dl-settings-chip';
-      chip.textContent = label;
+      chip.textContent = t(label);
       chip.title = '{' + key + '}';
       chip.addEventListener('click', () => {
         const start = template.selectionStart ?? template.value.length;
@@ -1673,7 +1940,7 @@
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'tk-dl-settings-reset';
-    reset.textContent = '恢复默认文件名';
+    reset.textContent = t('resetDefault');
     foot.append(status, reset);
     root.appendChild(foot);
     body.appendChild(root);
@@ -1701,19 +1968,19 @@
     function refreshPreview() {
       try {
         const name = DownloaderKit.settings.filename(currentTemplate(), {
-          title: '示例视频标题',
-          author: '示例作者',
+          title: t('sampleTitle'),
+          author: t('sampleAuthor'),
           id: '7600000000000000000',
           quality: '1080P'
         }, 'mp4');
         error.hidden = true;
         error.textContent = '';
-        preview.textContent = '预览：' + name;
+        preview.textContent = t('preview', { name });
         return currentTemplate();
       } catch (err) {
         error.hidden = false;
-        error.textContent = err.message || '模板无效';
-        preview.textContent = '—';
+        error.textContent = err.message || t('invalidTemplate');
+        preview.textContent = t('previewEmpty');
         return false;
       }
     }
@@ -1726,15 +1993,15 @@
     async function persist(showOk) {
       const nextTemplate = refreshPreview();
       if (!nextTemplate) {
-        status.textContent = '模板无效';
+        status.textContent = t('invalidTemplate');
         return;
       }
       try {
         await shell.settings.save(nextTemplate);
         if (activeMode === 'video') updateVideoDownloadState();
-        status.textContent = showOk ? '已保存' : '';
+        status.textContent = showOk ? t('saved') : '';
       } catch (err) {
-        status.textContent = err?.message || '保存失败';
+        status.textContent = err?.message || t('themeSaveFailed');
       }
     }
     function queueSave() {
@@ -1759,13 +2026,13 @@
         const saved = await shell.settings.reset();
         applyForm(saved);
         if (activeMode === 'video') updateVideoDownloadState();
-        status.textContent = '已恢复默认';
+        status.textContent = t('restored');
       } catch (err) {
-        status.textContent = err?.message || '恢复失败';
+        status.textContent = err?.message || t('restoreFailed');
       }
     });
     shell.settings?.ready?.then(() => applyForm(shell.settings.current())).catch((err) => {
-      status.textContent = err?.message || '加载失败';
+      status.textContent = err?.message || t('loadFailed');
     });
     shell.theme?.ready?.then(() => renderThemeOptions()).catch(() => {});
   }
@@ -1775,6 +2042,7 @@
     if (!themeControl || themeControl.contains(event.target)) return;
     themeControl.querySelector('.tk-dl-settings-theme-options')?.classList.add('hidden');
     themeControl.querySelector('.tk-dl-settings-theme-trigger')?.setAttribute('aria-expanded', 'false');
+    themeControl.classList.remove('is-open');
   });
 
   async function getDiagnostics() {
@@ -1796,27 +2064,81 @@
     };
   }
 
+  const POPUP_INFO_KEY = 'tiktok-dl-popup-info-v1';
+
+  function publishPopupInfo() {
+    if (window !== window.top) return;
+    try {
+      const info = popupInfo();
+      const pageRoot = document.getElementById('tiktok-dl-root');
+      if (pageRoot) {
+        if (info) pageRoot.setAttribute('data-popup-info', JSON.stringify(info));
+        else pageRoot.removeAttribute('data-popup-info');
+      }
+      if (!info) return;
+      DownloaderKit.runtime.storageSet({
+        [POPUP_INFO_KEY]: {
+          at: Date.now(),
+          tabUrl: location.href,
+          info
+        }
+      }, EXT).catch(() => {});
+      EXT.runtime.sendMessage({ type: 'TIKTOK_DL_PAGE_INFO', url: location.href, info }, () => {
+        void EXT.runtime.lastError;
+      });
+    } catch (_) {}
+  }
+
+  function popupQualities(video) {
+    const available = video ? mediaResources(video, selectedFormat === 'm4a' ? 'audio' : 'video') : [];
+    const labels = [];
+    const seen = new Set();
+    available.forEach((item) => {
+      const label = qualityPillLabel(item);
+      if (!label || seen.has(label)) return;
+      seen.add(label);
+      labels.push(label);
+    });
+    return { available, labels };
+  }
+
   function popupInfo() {
-    if (snapshot.kind === 'video' && snapshot.video) {
-      const video = snapshot.video;
-      const available = mediaResources(video, 'video');
+    const filename = filenamePreviewEl?.querySelector('.tk-dl-filename-preview-name')?.textContent?.trim() || '';
+    const quality = pillsEl?.querySelector('.tk-dl-pill.active')?.textContent?.trim() || '';
+    const formatText = formatPillsEl?.querySelector('.tk-dl-pill.active')?.textContent?.trim() || '';
+    const titleText = titleEl?.textContent?.trim() || '';
+    const cover = coverImgEl?.currentSrc || coverImgEl?.src || '';
+    const placeholder = /等待识别|没有识别|没有对上|解析失败|Waiting for a TikTok|Couldn’t match|Couldn’t parse|No playing video/i.test(titleText);
+    const video = currentVideo();
+    const rawAuthor = String(video?.author || creator?.displayName || creator?.username || '')
+      .replace(/^(?:作者|Author)\s*·\s*/i, '')
+      .trim();
+    if (filename || quality || (titleText && !placeholder)) {
+      const { available, labels } = popupQualities(video);
+      const duration = video?.duration ? formatDuration(video.duration) : '';
+      const published = video?.publishTime ? formatPublishTime(video.publishTime) : '';
       return {
-        mode: 'video',
-        title: video.title || 'TikTok 视频',
-        author: video.author || '',
-        cover: safeHttpUrl(video.cover),
-        sub: (video.duration ? formatDuration(video.duration) + ' · ' : '') + (available.length ? '可用资源 ' + available.length + ' 个' : '尚未识别到视频资源'),
+        mode: snapshot.kind === 'creator' && !filename ? 'creator' : 'video',
+        title: titleText || filename || t('tiktokVideo'),
+        author: rawAuthor,
+        cover: safeHttpUrl(cover) || (video ? safeHttpUrl(video.cover) : ''),
+        quality,
+        qualities: labels,
+        format: formatText,
+        filename,
+        sub: [duration, published].filter(Boolean).join(' · '),
         resourceCount: available.length,
-        id: video.id
+        id: video?.id || ''
       };
     }
     if (snapshot.kind === 'creator') {
       return {
         mode: 'creator',
         title: snapshot.creator?.displayName || snapshot.creator?.username || 'TikTok Creator',
-        author: snapshot.creator?.username ? '@' + snapshot.creator.username : '',
+        author: snapshot.creator?.username || '',
         cover: safeHttpUrl(snapshot.creator?.avatar),
-        sub: creatorVideos.size + ' 个已发现作品 · ' + (scanState === 'completed' ? '扫描完成' : '可开始扫描'),
+        qualities: [],
+        sub: '',
         creatorCount: creatorVideos.size
       };
     }
@@ -1826,7 +2148,6 @@
   async function onPageSnapshot(payload) {
     if (!payload || typeof payload !== 'object') return;
     if (payload.url && payload.url !== location.href) return;
-    if ((payload.reason === 'no-matching-item' || payload.reason === 'no-player') && snapshot.kind === 'video' && snapshot.video) return;
     const previousKind = snapshot.kind;
     const previousCreatorKey = creatorKey;
     snapshot = payload;
@@ -1844,8 +2165,8 @@
     if (snapshot.kind === 'creator' && Array.isArray(snapshot.videos)) mergeCreatorVideos(snapshot.videos);
     if (snapshot.kind === 'creator') scanDomCreatorVideos();
     const recognition = snapshot.kind === 'video' && snapshot.video
-      ? '已识别视频 ' + snapshot.video.id
-      : '未识别到视频：' + (snapshot.kind || 'unknown') + (snapshot.reason ? ' / ' + snapshot.reason : '');
+      ? 'Recognized video ' + snapshot.video.id
+      : 'No video: ' + (snapshot.kind || 'unknown') + (snapshot.reason ? ' / ' + snapshot.reason : '');
     if (panelDebug.lastRecognition !== recognition) {
       panelDebug.lastRecognition = recognition;
       panelDebug(recognition);
@@ -1856,13 +2177,14 @@
       renderView();
     } else if (activeMode === 'video') renderView();
     else if (activeMode === 'creator') updateCreatorStats();
+    publishPopupInfo();
   }
 
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== location.origin) return;
     if (event.data?.source === SOURCE && event.data?.type === 'SNAPSHOT') {
       pageAgentVersion = Number(event.data.version) || 0;
-      onPageSnapshot(event.data.payload).catch((error) => console.error('[TikTokDL] 快照处理失败', error));
+      onPageSnapshot(event.data.payload).catch((error) => console.error('[TikTokDL] snapshot failed', error));
     }
   });
   window.addEventListener('popstate', () => {
@@ -1872,10 +2194,13 @@
 
   EXT.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message?.type === 'TIKTOK_DL_GET_INFO') {
+      if (window !== window.top) return undefined;
       const info = popupInfo();
-      respond(info ? { ok: true, data: { info } } : { ok: false, error: '请打开 TikTok 视频或创作者主页。' });
+      if (info) publishPopupInfo();
+      respond(info ? { ok: true, data: { info } } : { ok: false, error: t('openVideoHint') });
       return false;
     }
+    if (window !== window.top) return undefined;
     if (message?.type === 'TIKTOK_DL_OPEN_PANEL') {
       shell.open();
       respond({ ok: true });
@@ -1912,11 +2237,14 @@
   let completionNotesReady = false;
   async function refreshCompletionNotes() {
     const history = await getHistory().catch(() => []);
-    const completed = new Set(history.filter((item) => item.status === 'completed').map((item) => item.id));
+    const completedItems = history.filter((item) => item.status === 'completed');
+    const completed = new Set(completedItems.map((item) => item.id));
     if (completionNotesReady) {
-      completed.forEach((id) => {
-        if (!knownCompletedIds.has(id)) shell.noteSuccess();
-      });
+      const fresh = completedItems.find((item) => !knownCompletedIds.has(item.id));
+      if (fresh) {
+        shell.noteSuccess();
+        if (activeMode === 'video') showSavedStatus(fresh);
+      }
     }
     knownCompletedIds = completed;
     completionNotesReady = true;
@@ -1953,12 +2281,128 @@
 
   shell.settings?.ready?.then(() => {
     const current = shell.settings.current();
-    if (!current?.filenameTemplate) shell.settings.save(DEFAULT_PREFS.filenameTemplate).catch(() => {});
+    const template = String(current?.filenameTemplate || '').trim();
+    if (!template || template === '{author} - {title}') {
+      shell.settings.save(DEFAULT_PREFS.filenameTemplate).catch(() => {});
+    }
   });
   loadPrefs().then(() => renderView()).catch(() => {});
+  DownloaderKit.i18n?.ready?.then(() => applyLanguage()).catch(() => {});
+  DownloaderKit.i18n?.onChange?.(applyLanguage);
   refreshCompletionNotes().catch(() => {});
   activeMode = /^\/@[^/]+\/video\/\d+/i.test(location.pathname) ? 'video'
     : (/^\/@[^/]+\/?$/i.test(location.pathname) ? 'creator' : 'video');
   renderView();
   window.postMessage({ source: 'tiktok-downloader-content', type: 'GET_SNAPSHOT' }, location.origin);
+
+  const fabPanel = document.getElementById('tiktok-dl-panel');
+  const toggleBtn = document.getElementById('tiktok-dl-toggle');
+  if (fabPanel && toggleBtn) {
+    let toggleDragged = false;
+    let dragActive = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragPanelLeft = 0;
+    let dragPanelTop = 0;
+    let dragMoved = false;
+    let dragPointerId = null;
+    const FAB_SIZE = 64;
+    const FAB_MARGIN = 8;
+    const FAB_POS_KEY = 'tiktok-dl-fab-pos-v1';
+
+    function clampFabPos(left, top) {
+      const maxL = Math.max(FAB_MARGIN, window.innerWidth - FAB_SIZE - FAB_MARGIN);
+      const maxT = Math.max(FAB_MARGIN, window.innerHeight - FAB_SIZE - FAB_MARGIN);
+      return {
+        left: Math.min(Math.max(left, FAB_MARGIN), maxL),
+        top: Math.min(Math.max(top, FAB_MARGIN), maxT)
+      };
+    }
+
+    function applyFabPos(left, top) {
+      const pos = clampFabPos(left, top);
+      fabPanel.style.left = pos.left + 'px';
+      fabPanel.style.top = pos.top + 'px';
+      fabPanel.style.right = 'auto';
+      fabPanel.style.bottom = 'auto';
+      return pos;
+    }
+
+    function onFabPointerMove(event) {
+      if (!dragActive || event.pointerId !== dragPointerId) return;
+      const dx = event.clientX - dragStartX;
+      const dy = event.clientY - dragStartY;
+      if (!dragMoved && Math.abs(dx) + Math.abs(dy) > 6) {
+        dragMoved = true;
+        toggleDragged = true;
+        toggleBtn.classList.add('dragging');
+      }
+      if (dragMoved) {
+        event.preventDefault();
+        applyFabPos(dragPanelLeft + dx, dragPanelTop + dy);
+      }
+    }
+
+    function onFabPointerUp(event) {
+      if (!dragActive || event.pointerId !== dragPointerId) return;
+      dragActive = false;
+      dragPointerId = null;
+      document.removeEventListener('pointermove', onFabPointerMove, true);
+      document.removeEventListener('pointerup', onFabPointerUp, true);
+      document.removeEventListener('pointercancel', onFabPointerUp, true);
+      toggleBtn.classList.remove('dragging');
+      fabPanel.style.transition = '';
+      if (dragMoved) {
+        const rect = fabPanel.getBoundingClientRect();
+        const pos = applyFabPos(rect.left, rect.top);
+        DownloaderKit.runtime.storageSet({ [FAB_POS_KEY]: pos }, EXT).catch(() => {});
+      }
+      setTimeout(() => { toggleDragged = false; }, 120);
+    }
+
+    toggleBtn.addEventListener('click', (event) => {
+      if (!toggleDragged) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+    toggleBtn.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      dragActive = true;
+      dragMoved = false;
+      toggleDragged = false;
+      dragPointerId = event.pointerId;
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+      const rect = fabPanel.getBoundingClientRect();
+      dragPanelLeft = rect.right - FAB_SIZE;
+      dragPanelTop = rect.bottom - FAB_SIZE;
+      if (fabPanel.style.left && fabPanel.style.left !== 'auto') {
+        dragPanelLeft = parseFloat(fabPanel.style.left) || dragPanelLeft;
+        dragPanelTop = parseFloat(fabPanel.style.top) || dragPanelTop;
+      }
+      fabPanel.style.transition = 'none';
+      applyFabPos(dragPanelLeft, dragPanelTop);
+      document.addEventListener('pointermove', onFabPointerMove, true);
+      document.addEventListener('pointerup', onFabPointerUp, true);
+      document.addEventListener('pointercancel', onFabPointerUp, true);
+    });
+    toggleBtn.addEventListener('dragstart', (event) => event.preventDefault());
+
+    DownloaderKit.runtime.storageGet([FAB_POS_KEY], EXT).then((data) => {
+      const pos = data?.[FAB_POS_KEY];
+      if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) applyFabPos(pos.left, pos.top);
+    }).catch(() => {});
+
+    let fabResizeTimer = 0;
+    window.addEventListener('resize', () => {
+      clearTimeout(fabResizeTimer);
+      fabResizeTimer = setTimeout(() => {
+        const left = parseFloat(fabPanel.style.left);
+        const top = parseFloat(fabPanel.style.top);
+        if (!Number.isFinite(left) || !Number.isFinite(top)) return;
+        const pos = applyFabPos(left, top);
+        DownloaderKit.runtime.storageSet({ [FAB_POS_KEY]: pos }, EXT).catch(() => {});
+      }, 100);
+    });
+  }
 })();

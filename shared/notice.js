@@ -4,16 +4,22 @@
   root.DownloaderKit.notice = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function noticeFactory() {
-  const DEFAULT_LABELS = {
-    pinned: '置顶说明',
-    recent: '最近更新',
-    knownIssues: '已知问题',
-    roadmap: '开发计划',
-    feedback: '征集中',
-    upcoming: '即将更新',
-    planned: '计划中',
-    empty: '暂无新公告'
-  };
+  function t(key, values) {
+    return globalThis.DownloaderKit?.i18n?.t?.(key, values) || key;
+  }
+
+  function defaultLabels() {
+    return {
+      pinned: t('noticePinned'),
+      recent: t('noticeRecent'),
+      knownIssues: t('noticeIssues'),
+      roadmap: t('noticeRoadmap'),
+      feedback: t('noticeFeedback'),
+      upcoming: t('noticeUpcoming'),
+      planned: t('noticePlanned'),
+      empty: t('noticeEmpty')
+    };
+  }
 
   function appendCoopSection(el, coop, opts) {
     if (coop?.enabled === false) return;
@@ -24,7 +30,7 @@
     if (!lines.length) return;
     const section = el.ownerDocument.createElement('div');
     section.className = prefix + '-notice-section ' + prefix + '-notice-coop';
-    const title = String(coop?.title || '开发合作').trim() || '开发合作';
+    const title = String(coop?.title || t('coopTitle')).trim() || t('coopTitle');
     dom.appendTextElement(section, 'div', prefix + '-notice-section-title', title);
     lines.forEach((line) => dom.appendTextElement(section, 'div', prefix + '-notice-coop-line', line));
     el.appendChild(section);
@@ -34,7 +40,7 @@
     const opts = options || {};
     const dom = opts.dom || globalThis.DownloaderKit?.dom;
     if (!el || !dom) return;
-    const labels = { ...DEFAULT_LABELS, ...(opts.labels || {}) };
+    const labels = { ...defaultLabels(), ...(opts.labels || {}) };
     const prefix = opts.classPrefix || 'dl-kit';
     dom.clearNode(el);
 
@@ -89,5 +95,5 @@
     appendCoopSection(el, opts.coop, opts);
   }
 
-  return { DEFAULT_LABELS, fillNoticeBody, appendCoopSection };
+  return { DEFAULT_LABELS: defaultLabels(), fillNoticeBody, appendCoopSection };
 });

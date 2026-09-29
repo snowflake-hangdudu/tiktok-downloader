@@ -5,6 +5,7 @@
   "description": "保存你在 TikTok 页面中可正常访问且有权保存的视频、音频和封面。",
   "permissions": [
     "activeTab",
+    "scripting",
     "storage",
     "downloads"
   ],
@@ -57,6 +58,7 @@
         "shared/rating.js",
         "shared/panel.js",
         "shared/shell.js",
+        "shared/i18n.js",
         "content/content.js"
       ],
       "css": [

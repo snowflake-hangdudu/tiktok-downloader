@@ -3,6 +3,54 @@
   box-sizing: border-box;
 }
 
+/* Keep clear of TikTok's right-side arrows and bottom chrome. */
+#tiktok-dl-panel.dl-kit-panel {
+  right: 28px;
+  bottom: 180px;
+}
+
+#tiktok-dl-toggle {
+  padding: 0;
+  border: 0;
+  background: #2b3a59;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+#tiktok-dl-toggle.dragging {
+  cursor: grabbing;
+  transform: scale(1.04);
+}
+
+#tiktok-dl-toggle img {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  display: block;
+  object-fit: cover;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+#tiktok-dl-panel .dl-kit-header-icon {
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+@media (max-width: 640px) {
+  #tiktok-dl-panel.dl-kit-panel {
+    right: 12px;
+    bottom: 120px;
+  }
+}
+
 .dl-kit .tk-dl {
   display: flex;
   flex-direction: column;
@@ -54,7 +102,8 @@
 }
 
 .dl-kit .tk-dl-cover-column {
-  flex: 0 0 96px;
+  flex: 0 0 72px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -62,16 +111,21 @@
 
 .dl-kit .tk-dl-cover-wrap {
   position: relative;
-  width: 96px;
-  height: 72px;
+  width: 72px;
+  height: 128px;
+  aspect-ratio: 9 / 16;
   overflow: hidden;
+  flex-shrink: 0;
   border-radius: 8px;
   background: var(--surface-strong);
+  box-shadow: none;
 }
 
 .dl-kit .tk-dl-cover,
 .dl-kit .tk-dl-sk-cover,
 .dl-kit .tk-dl-cover-ph {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -82,8 +136,7 @@
 }
 
 .dl-kit .tk-dl-sk-cover {
-  position: absolute;
-  inset: 0;
+  border-radius: 8px;
   background: var(--surface-strong);
 }
 
@@ -96,8 +149,10 @@
 }
 
 .dl-kit .tk-dl-cover-download {
+  position: static;
+  z-index: 1;
   box-sizing: border-box;
-  width: 96px;
+  width: 72px;
   min-height: 24px;
   margin: 0;
   padding: 3px 4px;
@@ -110,12 +165,19 @@
   font-weight: 500;
   line-height: 1.25;
   cursor: pointer;
+  transition: border-color .14s ease, color .14s ease, background .14s ease;
 }
 
 .dl-kit .tk-dl-cover-download:hover:not(:disabled) {
   border-color: var(--brand-border);
   background: var(--brand-soft);
   color: var(--brand-strong);
+}
+
+.dl-kit .tk-dl-cover-download:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: var(--text-muted);
 }
 
 .dl-kit .tk-dl-video-meta {
@@ -174,11 +236,13 @@
 .dl-kit .tk-dl-sk-line.short { width: 55%; height: 10px; }
 .dl-kit .tk-dl-sk-line.shorter { width: 38%; height: 10px; }
 
-.dl-kit .tk-dl-video-sub {
+.dl-kit .tk-dl-video-sub,
+.dl-kit[data-theme] .tk-dl-video-sub {
   margin: 0;
   overflow: hidden;
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 400;
   line-height: 18px;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -186,6 +250,27 @@
 
 .dl-kit .tk-dl-section {
   margin-bottom: 12px;
+}
+
+.dl-kit .tk-dl-options-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.dl-kit .tk-dl-options-row > .tk-dl-section {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.dl-kit .tk-dl-options-row > .tk-dl-section.hidden {
+  display: none;
+}
+
+.dl-kit .tk-dl-options-row:has(> .tk-dl-quality-section.hidden) > .tk-dl-format-row {
+  flex: 1 1 100%;
 }
 
 .dl-kit .tk-dl-section-head {
@@ -519,38 +604,61 @@
 }
 
 .dl-kit .tk-dl-debug {
-  margin-top: 10px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.dl-kit .tk-dl-debug summary {
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.dl-kit .tk-dl-debug-actions {
-  display: flex;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.dl-kit .tk-dl-debug-log {
-  max-height: 140px;
-  overflow: auto;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-size: 10px;
-  line-height: 1.45;
-  color: var(--text-secondary);
+  display: none !important;
 }
 
 .dl-kit .tk-status {
-  margin-top: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  word-break: break-word;
+}
+
+.dl-kit .tk-status[hidden] {
+  display: none !important;
+}
+
+.dl-kit .tk-status[data-kind="success"] {
+  display: block;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  border-color: var(--border);
+}
+
+.dl-kit .tk-status[data-kind="warn"] {
+  background: #fff8eb;
+  color: #9a6700;
+  border-color: #f0d9a8;
+}
+
+.dl-kit .tk-status[data-kind="error"] {
+  background: #fff4f2;
+  color: #b42318;
+  border-color: #f0c4be;
+}
+
+.dl-kit .tk-status-action {
+  margin: 0 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dl-kit .tk-status-action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 #tiktok-dl-panel[data-theme] #tiktok-dl-menu,
@@ -558,18 +666,17 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: min(calc(100vh - 200px), 650px);
-  height: min(calc(100dvh - 200px), 650px);
+  height: auto;
+  min-height: 0;
   max-height: min(calc(100vh - 200px), 650px);
   max-height: min(calc(100dvh - 200px), 650px);
-  min-height: 0;
 }
 
 #tiktok-dl-menu .dl-kit-body,
 #tiktok-dl-menu .dl-kit-page {
-  flex: 1 1 0%;
+  flex: 0 1 auto;
   min-height: 0;
-  max-height: none;
+  max-height: calc(min(calc(100dvh - 200px), 650px) - 52px - 76px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -612,11 +719,22 @@
   min-height: 245px;
 }
 
-.dl-kit .tk-video-card,
-.dl-kit .tk-creator-summary {
+.dl-kit .tk-video-card {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.dl-kit .tk-creator-summary {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--border);
@@ -777,13 +895,50 @@
 .dl-kit .tk-filter-row,
 .dl-kit .tk-history-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(96px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 7px;
   align-items: center;
 }
 
 .dl-kit .tk-filter-row .tk-input {
   grid-column: 1 / -1;
+}
+
+.dl-kit .tk-select-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.dl-kit .tk-select-wrap .tk-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding-right: 26px;
+  background: var(--surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dl-kit .tk-select-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  margin-top: -5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+.dl-kit .tk-select-wrap .tk-select:hover,
+.dl-kit .tk-select-wrap .tk-select:focus-visible {
+  border-color: var(--brand-border);
 }
 
 .dl-kit .tk-list-actions,
@@ -820,14 +975,10 @@
   color: #b42318;
 }
 
-.dl-kit .tk-creator-summary {
-  position: relative;
-  padding-right: 8px;
-}
-
 .dl-kit .tk-avatar {
   width: 48px;
   height: 48px;
+  grid-row: 1 / span 2;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--surface-strong);
@@ -841,12 +992,20 @@
   font-size: 20px;
 }
 
+.dl-kit .tk-creator-handle {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .dl-kit .tk-count {
-  margin-left: auto;
+  margin: 2px 0 0;
   color: var(--text-muted);
   font-size: 10px;
-  text-align: right;
+  line-height: 1.35;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dl-kit .tk-scan-controls {
@@ -878,9 +1037,9 @@
 .dl-kit .tk-creator-item,
 .dl-kit .tk-history-item {
   display: grid;
-  grid-template-columns: 16px 62px minmax(0, 1fr);
+  grid-template-columns: 16px 42px minmax(0, 1fr);
   gap: 8px;
-  align-items: center;
+  align-items: start;
   min-width: 0;
   padding: 8px;
   border-bottom: 1px solid var(--border-soft);
@@ -899,12 +1058,21 @@
   cursor: pointer;
 }
 
-.dl-kit .tk-creator-cover,
+.dl-kit .tk-creator-cover {
+  width: 42px;
+  height: 74px;
+  aspect-ratio: 9 / 16;
+  border-radius: 6px;
+  background: var(--surface-strong);
+  object-fit: cover;
+}
+
 .dl-kit .tk-history-cover {
-  width: 62px;
-  height: 42px;
-  border-radius: 5px;
-  background: var(--surface);
+  width: 42px;
+  height: 74px;
+  aspect-ratio: 9 / 16;
+  border-radius: 6px;
+  background: var(--surface-strong);
   object-fit: cover;
 }
 
@@ -915,14 +1083,34 @@
   font-size: 11px;
   font-weight: 600;
   line-height: 1.35;
+  text-decoration: none;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
+.dl-kit .tk-creator-item-title:hover {
+  color: var(--brand-strong);
+  text-decoration: underline;
+}
+
+.dl-kit .tk-creator-item-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
 .dl-kit .tk-creator-item-meta {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dl-kit .tk-creator-item-footer .tk-status-pill {
+  flex: 0 0 auto;
 }
 
 .dl-kit .tk-status-pill {
@@ -1164,29 +1352,6 @@
   text-align: center;
 }
 
-.dl-kit .tk-status {
-  padding: 0 2px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.dl-kit .tk-status[hidden] {
-  display: none;
-}
-
-.dl-kit .tk-status[data-kind="success"] {
-  display: none;
-}
-
-.dl-kit .tk-status[data-kind="warn"] {
-  color: #9a6700;
-}
-
-.dl-kit .tk-status[data-kind="error"] {
-  color: #b42318;
-}
-
 .dl-kit .tk-field {
   display: grid;
   gap: 6px;
@@ -1266,6 +1431,11 @@
   cursor: pointer;
 }
 
+#tiktok-dl-menu .dl-kit-footer-action[data-sheet="notice"],
+#tiktok-dl-menu .dl-kit-footer-action[hidden] {
+  display: none !important;
+}
+
 #tiktok-dl-menu .dl-kit-footer.is-actions .dl-kit-footer-action svg {
   width: 12px;
   height: 12px;
@@ -1304,32 +1474,87 @@
   flex: 0 1 210px;
 }
 
+.dl-kit .tk-dl-settings-theme-control.is-open {
+  z-index: 40;
+}
+
+.dl-kit .tk-dl-settings-control {
+  position: relative;
+  z-index: 1;
+  width: 210px;
+  max-width: 66%;
+  flex: 0 1 210px;
+}
+
 .dl-kit .tk-dl-settings-theme-trigger,
 .dl-kit .tk-dl-settings-select {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 8px;
+  padding: 4px 26px 4px 8px;
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 7px;
   background: var(--surface, #f7f8fa);
   color: var(--text-primary);
   font: inherit;
   font-size: 11px;
+  line-height: 1.35;
 }
 
 .dl-kit .tk-dl-settings-theme-trigger {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-right: 8px;
   text-align: left;
   cursor: pointer;
 }
 
 .dl-kit .tk-dl-settings-select {
-  max-width: 210px;
-  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dl-kit .tk-dl-settings-select-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.dl-kit .tk-dl-settings-select-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  margin-top: -5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.dl-kit .tk-dl-settings-theme-trigger:hover,
+.dl-kit .tk-dl-settings-theme-trigger[aria-expanded="true"],
+.dl-kit .tk-dl-settings-select:hover {
+  border-color: var(--brand-border, var(--brand-strong, #fe2c55));
+}
+
+.dl-kit .tk-dl-settings-select:focus {
+  outline: none;
+}
+
+.dl-kit .tk-dl-settings-select:focus-visible,
+.dl-kit .tk-dl-settings-theme-trigger:focus-visible {
+  outline: 2px solid var(--brand-strong, #fe2c55);
+  outline-offset: 1px;
+  border-color: var(--brand-border, var(--brand-strong, #fe2c55));
 }
 
 .dl-kit .tk-dl-settings-theme-current-label {
@@ -1370,10 +1595,17 @@
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(45deg);
+  transition: transform 0.15s ease, margin 0.15s ease;
+}
+
+.dl-kit .tk-dl-settings-theme-trigger[aria-expanded="true"] .tk-dl-settings-theme-chevron {
+  margin-top: 2px;
+  transform: rotate(-135deg);
 }
 
 .dl-kit .tk-dl-settings-theme-options {
   position: absolute;
+  z-index: 1;
   top: calc(100% + 4px);
   right: 0;
   left: 0;
@@ -1382,7 +1614,7 @@
   padding: 4px;
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--dl-bg, #fff);
   box-shadow: 0 8px 22px rgb(24 24 27 / 16%);
 }
 
@@ -1394,6 +1626,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 30px;
   padding: 4px 7px;
   border: 0;
@@ -1406,10 +1639,23 @@
   cursor: pointer;
 }
 
+.dl-kit .tk-dl-settings-theme-option > span:last-child {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dl-kit .tk-dl-settings-theme-option:hover,
 .dl-kit .tk-dl-settings-theme-option[aria-selected="true"] {
   background: var(--brand-soft);
   color: var(--brand-strong);
+}
+
+.dl-kit .tk-dl-settings-theme-option:focus-visible {
+  outline: 2px solid var(--brand-strong, #fe2c55);
+  outline-offset: 1px;
 }
 
 .dl-kit .tk-dl-settings-custom {

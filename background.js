@@ -1,4 +1,4 @@
-importScripts('shared/runtime.js', 'shared/remote-content.js', 'shared/config-handler.js');
+importScripts('shared/runtime.js', 'shared/i18n.js', 'shared/remote-content.js', 'shared/config-handler.js');
 
 // The queue is deliberately self-contained: service workers can stop at any time,
 // so the storage copy is always the source of truth.
@@ -7,14 +7,36 @@ const TASKS_KEY = 'tiktok-dl-tasks-v1';
 const HISTORY_KEY = 'tiktok-dl-history-v1';
 const SETTINGS_KEY = 'tiktok-dl-settings-v1';
 const CONFIG_URL = 'http://124.222.62.190:8081/api/config/tiktok';
+const CONFIG_MESSAGE = 'TIKTOK_DL_FETCH_JSON';
 const ACTIVE = new Set(['waiting', 'downloading', 'paused']);
 const FINISHED = new Set(['completed', 'failed', 'cancelled']);
 let work = Promise.resolve();
 let scheduling = false;
+const pageInfoByTab = new Map();
+
+function rememberPageInfo(tabId, url, info) {
+  if (!Number.isInteger(tabId) || !info || typeof info !== 'object') return;
+  pageInfoByTab.set(tabId, { url: String(url || ''), info, at: Date.now() });
+}
+
+EXT.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'TIKTOK_DL_PAGE_INFO') {
+    rememberPageInfo(sender.tab?.id, message.url || sender.tab?.url, message.info);
+    respond({ ok: true });
+    return false;
+  }
+  if (message?.type === 'TIKTOK_DL_READ_PAGE_INFO') {
+    const hit = pageInfoByTab.get(message.tabId);
+    const fresh = Boolean(hit?.info) && Date.now() - Number(hit.at || 0) < 5 * 60 * 1000;
+    respond(fresh ? { ok: true, info: hit.info, url: hit.url } : { ok: false });
+    return false;
+  }
+  return undefined;
+});
 
 DownloaderKit.attachConfigHandler(EXT, {
   configUrl: CONFIG_URL,
-  messageType: 'TIKTOK_DL_FETCH_JSON'
+  messageType: CONFIG_MESSAGE
 });
 
 function serial(task) {
@@ -28,6 +50,11 @@ function requestSchedule() {
 }
 
 function now() { return Date.now(); }
+
+async function t(key, values) {
+  await DownloaderKit.i18n.ready;
+  return DownloaderKit.i18n.t(key, values);
+}
 
 function text(value, limit) {
   return String(value || '').trim().slice(0, limit || 500);
@@ -138,7 +165,7 @@ async function syncActiveDownloads(state) {
       if (switched) await discardFailedDownload(failedId);
       else {
         task.status = item.error === 'USER_CANCELED' ? 'cancelled' : 'failed';
-        task.error = item.error || '下载中断';
+        task.error = item.error || await t('downloadInterrupted');
         task.updatedAt = now();
         if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
       }
@@ -311,7 +338,7 @@ async function schedule() {
           }
           else {
             task.status = native.error === 'USER_CANCELED' ? 'cancelled' : 'failed';
-            task.error = native.error || '下载中断';
+            task.error = native.error || await t('downloadInterrupted');
             task.updatedAt = now();
             if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
           }
@@ -370,7 +397,7 @@ async function reconcile() {
       if (switched) await discardFailedDownload(failedId);
       else {
         task.status = item.error === 'USER_CANCELED' ? 'cancelled' : 'failed';
-        task.error = item.error || '下载中断'; task.updatedAt = now();
+        task.error = item.error || await t('downloadInterrupted'); task.updatedAt = now();
         if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
       }
       changed = true;
@@ -441,7 +468,7 @@ EXT.downloads.onChanged.addListener((delta) => {
       }
       else {
         task.status = errorCode === 'USER_CANCELED' || task.status === 'cancelled' ? 'cancelled' : 'failed';
-        task.error = errorCode || '下载中断';
+        task.error = errorCode || await t('downloadInterrupted');
         if (task.status === 'failed') state.history = appendHistory(state.history, task, 'failed', task.error);
         terminal = true;
       }
@@ -455,7 +482,7 @@ EXT.downloads.onChanged.addListener((delta) => {
 
 async function control(state, id, action) {
   const task = state.tasks.find((item) => item.id === id);
-  if (!task) throw new Error('任务不存在');
+  if (!task) throw new Error(await t('taskNotFound'));
   if (action === 'pause' && task.status === 'downloading') {
     if (Number.isInteger(task.downloadId)) await DownloaderKit.runtime.invoke(EXT.downloads.pause, EXT.downloads, [task.downloadId]);
     task.status = 'paused';
@@ -482,14 +509,14 @@ async function control(state, id, action) {
     task.status = 'waiting'; task.downloadId = null; task.error = ''; task.progress = 0; task.bytesReceived = 0; task.totalBytes = 0;
     task.url = task.primaryUrl || task.url;
     task.backupIndex = 0;
-  } else if (!['pause', 'resume', 'cancel', 'retry'].includes(action)) throw new Error('无效操作');
+  } else if (!['pause', 'resume', 'cancel', 'retry'].includes(action)) throw new Error(await t('invalidAction'));
   task.updatedAt = now();
   return task;
 }
 
 EXT.runtime.onMessage.addListener((message, _sender, respond) => {
   const type = message?.type;
-  if (!String(type || '').startsWith('TIKTOK_DL_') || type === 'TIKTOK_DL_FETCH_JSON' || type === 'TIKTOK_DL_TASKS_CHANGED' || type === 'TIKTOK_DL_DEBUG') return undefined;
+  if (!String(type || '').startsWith('TIKTOK_DL_') || type === 'TIKTOK_DL_FETCH_JSON' || type === 'TIKTOK_DL_TASKS_CHANGED' || type === 'TIKTOK_DL_DEBUG' || type === 'TIKTOK_DL_PAGE_INFO' || type === 'TIKTOK_DL_READ_PAGE_INFO' || type === 'TIKTOK_DL_GET_INFO') return undefined;
   serial(async () => {
     const state = await stored();
     if (type === 'TIKTOK_DL_QUEUE_LIST') {
@@ -503,9 +530,15 @@ EXT.runtime.onMessage.addListener((message, _sender, respond) => {
     }
     if (type === 'TIKTOK_DL_HISTORY_LIST') return { ok: true, history: state.history };
     if (type === 'TIKTOK_DL_HISTORY_CLEAR') { state.history = []; await save({ history: state.history }); notify('history'); return { ok: true }; }
+    if (type === 'TIKTOK_DL_OPEN_DOWNLOADS') {
+      const url = typeof browser !== 'undefined' && browser.runtime?.getBrowserInfo ? 'about:downloads' : 'chrome://downloads/';
+      if (!EXT.tabs?.create) throw new Error(await t('cannotOpenDownloads'));
+      await DownloaderKit.runtime.invoke(EXT.tabs.create, EXT.tabs, [{ url }]);
+      return { ok: true };
+    }
     if (type === 'TIKTOK_DL_DATA_CLEAR') {
       const scope = message.scope;
-      if (!['history', 'tasks', 'all'].includes(scope)) throw new Error('无效清理范围');
+      if (!['history', 'tasks', 'all'].includes(scope)) throw new Error(await t('invalidClearScope'));
       if (scope === 'history' || scope === 'all') state.history = [];
       if (scope === 'tasks' || scope === 'all') {
         await Promise.all(state.tasks
@@ -546,7 +579,7 @@ EXT.runtime.onMessage.addListener((message, _sender, respond) => {
     if (type === 'TIKTOK_DL_QUEUE_DELETE') {
       const id = text(message.id, 160);
       const task = state.tasks.find((item) => item.id === id);
-      if (!task) throw new Error('任务不存在');
+      if (!task) throw new Error(await t('taskNotFound'));
       if (ACTIVE.has(task.status) && Number.isInteger(task.downloadId)) {
         await DownloaderKit.runtime.invoke(EXT.downloads.cancel, EXT.downloads, [task.downloadId]).catch(() => {});
       }
@@ -558,7 +591,7 @@ EXT.runtime.onMessage.addListener((message, _sender, respond) => {
     }
     if (type === 'TIKTOK_DL_QUEUE_BULK') {
       const action = message.action;
-      if (!['pause-all', 'resume-all', 'cancel-waiting', 'retry-failed', 'clear-completed'].includes(action)) throw new Error('无效批量操作');
+      if (!['pause-all', 'resume-all', 'cancel-waiting', 'retry-failed', 'clear-completed'].includes(action)) throw new Error(await t('invalidBulkAction'));
       for (const task of [...state.tasks]) {
         if (action === 'pause-all' && task.status === 'downloading') await control(state, task.id, 'pause');
         if (action === 'resume-all' && task.status === 'paused') await control(state, task.id, 'resume');

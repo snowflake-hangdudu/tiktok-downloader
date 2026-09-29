@@ -1,14 +1,14 @@
 /**
  * TikTok Downloader -- page data reader (MAIN world).
- * Reads only the page's public DOM and hydration data.  It deliberately makes
- * no requests: the isolated content script decides what to do with a snapshot.
+ * Reads the page's public DOM and hydration data. Sponsored feed cards may
+ * need their public detail page because the feed supplies an ad playback URL.
  */
 (function () {
   'use strict';
 
   if (window.__TIKTOK_DOWNLOADER_PAGE_AGENT__) return;
   window.__TIKTOK_DOWNLOADER_PAGE_AGENT__ = true;
-  window.__TIKTOK_DOWNLOADER_PAGE_AGENT_VERSION__ = 2;
+  window.__TIKTOK_DOWNLOADER_PAGE_AGENT_VERSION__ = 4;
 
   const SOURCE = 'tiktok-downloader-page-agent';
   const CONTENT_SOURCE = 'tiktok-downloader-content';
@@ -17,9 +17,108 @@
   let scheduled = 0;
   let lastUrl = location.href;
   let lastSnapshotJson = '';
+  const fetchedItems = new Map();
+  const sponsoredDetails = new Map();
+  const sponsoredRequests = new Map();
+  const sponsoredFailures = new Map();
+
+  function loadSponsoredDetail(id, pageUrl) {
+    if (sponsoredDetails.has(id) || sponsoredRequests.has(id) || typeof window.fetch !== 'function'
+      || Date.now() - (sponsoredFailures.get(id) || 0) < 30000) return;
+    let url;
+    try { url = new URL(pageUrl, location.origin); } catch (_) { return; }
+    if (url.origin !== location.origin || !new RegExp('/video/' + id + '/?$').test(url.pathname)) return;
+    const request = window.fetch(url.href, { credentials: 'same-origin' }).then(async (response) => {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const html = await response.text();
+      const raw = html.match(/<script\b[^>]*\bid=["']__UNIVERSAL_DATA_FOR_REHYDRATION__["'][^>]*>([\s\S]*?)<\/script>/i)?.[1];
+      if (!raw) throw new Error('作品页没有视频数据');
+      const scope = JSON.parse(raw)?.__DEFAULT_SCOPE__;
+      const item = itemStruct(scope?.['webapp.video-detail']?.itemInfo?.itemStruct);
+      if (text(item?.id) !== id || !makeVideo(item)?.resources.some((resource) => resource.type === 'video')) {
+        throw new Error('作品页没有匹配的下载资源');
+      }
+      sponsoredDetails.set(id, item);
+      while (sponsoredDetails.size > 50) sponsoredDetails.delete(sponsoredDetails.keys().next().value);
+      queueEmit();
+    }).catch((error) => {
+      sponsoredFailures.set(id, Date.now());
+      console.warn('[TikTokDL] 赞助视频作品页解析失败', id, error);
+    }).finally(() => {
+      sponsoredRequests.delete(id);
+    });
+    sponsoredRequests.set(id, request);
+  }
+
+  function rememberItems(data) {
+    const list = data?.itemList || data?.item_list || data?.aweme_list || data?.items
+      || (data?.itemInfo?.itemStruct ? [data.itemInfo.itemStruct] : data?.itemStruct ? [data.itemStruct] : []);
+    if (!Array.isArray(list)) return;
+    let added = false;
+    list.slice(0, 100).forEach((value) => {
+      const item = itemStruct(value);
+      const id = text(item?.id || item?.awemeId || item?.aweme_id || item?.itemId || item?.item_id);
+      if (!/^\d{6,}$/.test(id) || !item.video) return;
+      fetchedItems.delete(id);
+      fetchedItems.set(id, item);
+      added = true;
+    });
+    while (fetchedItems.size > 250) fetchedItems.delete(fetchedItems.keys().next().value);
+    if (added) queueEmit();
+  }
+
+  function watchItemResponses() {
+    if (typeof window.fetch !== 'function') return;
+    const originalFetch = window.fetch;
+    window.fetch = function () {
+      const input = arguments[0];
+      const request = originalFetch.apply(this, arguments);
+      let path = '';
+      try { path = new URL(typeof input === 'string' ? input : input?.url, location.href).pathname; } catch (_) {}
+      if (!/^\/api\/.*(?:item_list|item\/detail)/i.test(path)) return request;
+      return request.then((response) => {
+        try { response.clone().json().then(rememberItems).catch(() => {}); } catch (_) {}
+        return response;
+      });
+    };
+  }
 
   function text(value) {
     return typeof value === 'string' ? value.trim() : (value == null ? '' : String(value).trim());
+  }
+
+  function isOurUiNode(node) {
+    try {
+      return !!(node?.closest?.('#tiktok-dl-root, #tiktok-dl-toggle, .dl-kit')
+        || node?.id === 'tiktok-dl-root'
+        || node?.id === 'tiktok-dl-toggle');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** Reject player chrome, masked anti-bot text, and our own panel copy. */
+  function cleanCaption(value) {
+    let valueText = text(value);
+    if (!valueText) return '';
+    valueText = valueText
+      .replace(/\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!valueText) return '';
+    if (/TikTok\s*下载助手|开始下载|清晰度|保存为|查看浏览器下载记录|文件名预览|预计大小/.test(valueText)) return '';
+    if (/\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/.test(valueText) && valueText.length < 40) return '';
+    const letters = valueText.replace(/\s+/g, '');
+    const masked = (letters.match(/x/gi) || []).length;
+    if (letters.length >= 4 && masked / letters.length >= 0.7) return '';
+    return valueText.slice(0, 500);
+  }
+
+  function cleanAuthorName(value) {
+    const name = cleanCaption(value);
+    if (!name) return '';
+    if (/^@?x{3,}$/i.test(name)) return '';
+    return name.slice(0, 80);
   }
 
   function positiveNumber(value) {
@@ -112,10 +211,12 @@
   }
 
   function streamLabel(resource) {
+    const width = positiveNumber(resource?.width);
     const height = positiveNumber(resource?.height);
+    const resolution = width && height ? Math.min(width, height) : height || width;
     const family = codecFamily(resource?.codec);
     const codecLabel = family === 'h264' ? 'H.264' : family === 'h265' ? 'HEVC' : '';
-    return [height ? height + 'P' : '', codecLabel].filter(Boolean).join(' ') || '视频';
+    return [resolution ? resolution + 'P' : '', codecLabel].filter(Boolean).join(' ') || '视频';
   }
 
   function codecFamily(value) {
@@ -152,25 +253,41 @@
     return 1;
   }
 
+  function backupPreference(resource) {
+    return playbackRank(resource) * 10 + sourceRank(resource?.source);
+  }
+
+  function isDownloadableSource(resource) {
+    return sourceRank(resource?.source) >= 3;
+  }
+
   function betterPlayback(candidate, current) {
     const byCodec = playbackRank(candidate) - playbackRank(current);
     if (byCodec !== 0) return byCodec > 0;
     return resourcePriority(candidate) > resourcePriority(current);
   }
 
-  function isUsableVideoResource(resource, durationSec) {
+  /** Prefer addresses that chrome.downloads can fetch; play-only CDN links often return 没有权限. */
+  function betterPrimary(candidate, current) {
+    const candCodec = codecFamily(candidate?.codec);
+    const currCodec = codecFamily(current?.codec);
+    if ((candCodec === 'h264') !== (currCodec === 'h264')) return candCodec === 'h264';
+    const candDl = isDownloadableSource(candidate);
+    const currDl = isDownloadableSource(current);
+    if (candDl !== currDl) return candDl;
+    const candSize = positiveNumber(candidate.sizeBytes) || positiveNumber(candidate.estimatedBytes);
+    const currSize = positiveNumber(current.sizeBytes) || positiveNumber(current.estimatedBytes);
+    if ((candSize > 0) !== (currSize > 0)) return candSize > 0;
+    return betterPlayback(candidate, current);
+  }
+
+  function isUsableVideoResource(resource) {
     if (!resource?.url || resource.type !== 'video') return false;
     if (sourceRank(resource.source) <= 0) return false;
-    const size = positiveNumber(resource.sizeBytes) || positiveNumber(resource.estimatedBytes);
-    const height = positiveNumber(resource.height);
-    const seconds = positiveNumber(durationSec);
-    if (size > 0) {
-      if (height >= 1280 && size < 1200 * 1024) return false;
-      if (height >= 960 && size < 450 * 1024) return false;
-      if (height >= 720 && size < 220 * 1024) return false;
-      if (seconds >= 5 && height >= 720 && size < 350 * 1024) return false;
-      if (seconds >= 8 && size < 120 * 1024) return false;
-    }
+    // TikTok's HEVC PlayAddr is often scoped to its own player and Chrome
+    // downloads rejects it with SERVER_FORBIDDEN. Only use HEVC when TikTok
+    // explicitly supplies a download address for that stream.
+    if (resource.source === '页面播放' && codecFamily(resource.codec) === 'h265') return false;
     return true;
   }
 
@@ -190,9 +307,9 @@
     return true;
   }
 
-  function finalizeVideoResources(resources, durationSec) {
+  function finalizeVideoResources(resources) {
     const videos = resources
-      .filter((item) => item.type === 'video' && isUsableVideoResource(item, durationSec))
+      .filter((item) => item.type === 'video' && isUsableVideoResource(item))
       .sort((a, b) => {
         const pxA = (a.width || 0) * (a.height || 0);
         const pxB = (b.width || 0) * (b.height || 0);
@@ -216,14 +333,14 @@
         groups.set(key, {
           ...resource,
           backupUrls: [...(resource.backupUrls || [])],
-          backupRanks: Object.fromEntries((resource.backupUrls || []).map((url) => [url, playbackRank(resource)])),
+          backupRanks: Object.fromEntries((resource.backupUrls || []).map((url) => [url, backupPreference(resource)])),
           mergedHeights: resource.height ? [resource.height] : []
         });
         return;
       }
       let primary = existing;
       let secondary = resource;
-      if (betterPlayback(resource, existing)) {
+      if (betterPrimary(resource, existing)) {
         primary = { ...resource, backupUrls: [...(resource.backupUrls || [])], backupRanks: { ...(existing.backupRanks || {}) } };
         secondary = existing;
       }
@@ -232,9 +349,9 @@
         if (!url || url === primary.url) return;
         backupRanks[url] = Math.max(backupRanks[url] || 0, rank);
       };
-      (primary.backupUrls || []).forEach((url) => remember(url, backupRanks[url] || playbackRank(primary)));
-      remember(secondary.url, playbackRank(secondary));
-      (secondary.backupUrls || []).forEach((url) => remember(url, playbackRank(secondary)));
+      (primary.backupUrls || []).forEach((url) => remember(url, backupRanks[url] || backupPreference(primary)));
+      remember(secondary.url, backupPreference(secondary));
+      (secondary.backupUrls || []).forEach((url) => remember(url, backupPreference(secondary)));
       primary.backupUrls = Object.entries(backupRanks)
         .sort((a, b) => b[1] - a[1])
         .map(([url]) => url)
@@ -314,21 +431,25 @@
     const duration = positiveNumber(video.duration || item.duration);
     const resources = [];
     const seen = new Set();
-    addResource(resources, seen, 'video', [video.playAddr, video.play_addr, video.PlayAddr], width, height, video.mimeType || video.mime,
-      video.size || video.playAddr?.size || video.play_addr?.size, video.bitrate || video.bitRate, duration, video.format, video.codecType, '页面播放');
     addResource(resources, seen, 'video', [video.downloadAddr, video.download_addr, video.DownloadAddr], width, height, video.mimeType || video.mime,
       video.size || video.downloadAddr?.size || video.download_addr?.size, video.bitrate || video.bitRate, duration, video.format, video.codecType, '页面下载');
+    addResource(resources, seen, 'video', [video.playAddr, video.play_addr, video.PlayAddr], width, height, video.mimeType || video.mime,
+      video.size || video.playAddr?.size || video.play_addr?.size, video.bitrate || video.bitRate, duration, video.format, video.codecType, '页面播放');
     const bitrates = [video.bitrateInfo, video.bitrate_info, video.BitrateInfo].find((value) => Array.isArray(value) && value.length) || [];
     bitrates.forEach((entry) => {
-      const address = [entry.downloadAddr, entry.download_addr, entry.DownloadAddr, entry.playAddr, entry.play_addr, entry.PlayAddr, entry.url, entry.url_list];
-      const addressInfo = address.find((candidate) => candidate && typeof candidate === 'object' && urlList(candidate).length) || {};
-      addResource(resources, seen, 'video', address,
-        positiveNumber(entry.width || entry.Width || addressInfo.width || addressInfo.Width) || width,
-        positiveNumber(entry.height || entry.Height || addressInfo.height || addressInfo.Height) || height,
-        entry.mimeType || entry.mime || addressInfo.MimeType || '',
-        entry.size || entry.fileSize || entry.file_size || entry.DataSize || addressInfo.DataSize,
-        entry.bitrate || entry.bitRate || entry.Bitrate, duration,
-        entry.format || entry.Format, entry.codecType || entry.CodecType, '画质档位');
+      const addressInfo = [entry.downloadAddr, entry.download_addr, entry.DownloadAddr, entry.playAddr, entry.play_addr, entry.PlayAddr]
+        .find((candidate) => candidate && typeof candidate === 'object' && urlList(candidate).length) || {};
+      const entryWidth = positiveNumber(entry.width || entry.Width || addressInfo.width || addressInfo.Width) || width;
+      const entryHeight = positiveNumber(entry.height || entry.Height || addressInfo.height || addressInfo.Height) || height;
+      const entryMime = entry.mimeType || entry.mime || addressInfo.MimeType || '';
+      const entrySize = entry.size || entry.fileSize || entry.file_size || entry.DataSize || addressInfo.DataSize;
+      const entryBitrate = entry.bitrate || entry.bitRate || entry.Bitrate;
+      const entryFormat = entry.format || entry.Format;
+      const entryCodec = entry.codecType || entry.CodecType;
+      addResource(resources, seen, 'video', [entry.downloadAddr, entry.download_addr, entry.DownloadAddr],
+        entryWidth, entryHeight, entryMime, entrySize, entryBitrate, duration, entryFormat, entryCodec, '画质档位');
+      addResource(resources, seen, 'video', [entry.playAddr, entry.play_addr, entry.PlayAddr, entry.url, entry.url_list],
+        entryWidth, entryHeight, entryMime, entrySize, entryBitrate, duration, entryFormat, entryCodec, '页面播放');
     });
     const music = item.music || item.musicInfo || {};
     addResource(resources, seen, 'audio', [music.downloadUrl, music.download_url, music.DownloadUrl], 0, 0, music.mimeType || music.mime,
@@ -342,14 +463,14 @@
     return {
       id,
       pageUrl,
-      title: text(item.desc || item.title || item.description),
-      description: text(item.desc || item.description),
-      author: author.displayName || author.username,
+      title: cleanCaption(item.desc || item.title || item.description),
+      description: cleanCaption(item.desc || item.description),
+      author: cleanAuthorName(author.displayName) || author.username,
       authorId: author.id,
       duration,
       publishTime: published(item.createTime || item.create_time || item.createTimestamp),
       cover,
-      resources: consolidateResources(finalizeVideoResources(resources, duration))
+      resources: consolidateResources(finalizeVideoResources(resources))
     };
   }
 
@@ -389,11 +510,29 @@
       const video = makeVideo(item);
       if (video && !byId.has(video.id)) byId.set(video.id, { item, video });
     });
+    fetchedItems.forEach((item) => {
+      const video = makeVideo(item);
+      if (video) byId.set(video.id, { item, video });
+    });
+    sponsoredDetails.forEach((item) => {
+      const video = makeVideo(item);
+      if (video) byId.set(video.id, { item, video });
+    });
     return [...byId.values()];
   }
 
   function findStateItem(id) {
     if (!/^\d{6,}$/.test(id)) return null;
+    const sponsored = sponsoredDetails.get(id);
+    if (sponsored) {
+      const video = makeVideo(sponsored);
+      if (video) return { item: sponsored, video };
+    }
+    const fetched = fetchedItems.get(id);
+    if (fetched) {
+      const video = makeVideo(fetched);
+      if (video) return { item: fetched, video };
+    }
     const seen = new WeakSet();
     const budget = { left: 5000 };
     const roots = [
@@ -462,9 +601,10 @@
   }
 
   function feedContext(player) {
-    const context = { id: '', ids: [], username: '', text: '' };
+    const context = { id: '', ids: [], username: '', text: '', sponsored: false };
     const card = player.closest?.('[data-e2e="feed-video"], [id^="media-card-"], [data-e2e="recommend-list-item-container"], article, [id^="one-column-item"]')
       || player.parentElement;
+    context.sponsored = !!card?.querySelector?.('[data-e2e="ad-tag"]');
     const pushId = (value) => {
       const id = digitsId(value);
       if (id && !context.ids.includes(id)) context.ids.push(id);
@@ -473,15 +613,31 @@
     pushId(card?.querySelector?.('[id^="xgwrapper-"]')?.id);
     let current = player;
     for (let depth = 0; current && depth < 18; depth += 1, current = current.parentElement) {
+      if (isOurUiNode(current) || current === document.body || current === document.documentElement) break;
       if (/^xgwrapper-/i.test(current.id || '')) pushId(current.id);
       pushId(current.getAttribute?.('data-e2e-vid'));
-      const desc = current.querySelector?.('[data-e2e="video-desc"], [data-e2e="browse-video-desc"]');
-      const descText = text(desc?.innerText || desc?.textContent);
-      if (!context.text && descText.length >= 6) context.text = descText.slice(0, 2000);
-      const content = text(current.innerText || current.textContent);
-      if (!context.text && content.length > 6 && content.length <= 2000) context.text = content;
+      const desc = current.querySelector?.([
+        '[data-e2e="video-desc"]',
+        '[data-e2e="browse-video-desc"]',
+        '[data-e2e="new-desc-span"]',
+        '[data-e2e="video-desc-content"]'
+      ].join(', '));
+      if (!isOurUiNode(desc)) {
+        const descText = cleanCaption(desc?.innerText || desc?.textContent);
+        if (!context.text && descText.length >= 1) context.text = descText;
+      }
+      const nick = current.querySelector?.([
+        '[data-e2e="video-author-nickname"]',
+        '[data-e2e="browse-username"]',
+        '[data-e2e="video-author-uniqueid"]'
+      ].join(', '));
+      if (!context.username && nick && !isOurUiNode(nick)) {
+        const nickText = cleanAuthorName(nick.innerText || nick.textContent).replace(/^@/, '');
+        if (nickText && !/^x{3,}$/i.test(nickText)) context.username = nickText;
+      }
       const anchors = current.querySelectorAll?.('a[href]') || [];
       for (const anchor of anchors) {
+        if (isOurUiNode(anchor)) continue;
         let url;
         try { url = new URL(anchor.href || anchor.getAttribute('href'), location.href); } catch (_) { continue; }
         const path = stripLocale(url.pathname);
@@ -509,6 +665,7 @@
       const exact = items.find(({ video }) => video.id === id);
       if (exact) return exact;
     }
+    if (ids.length) return null;
     const exactResource = playerUrl && items.find(({ video }) => video.resources.some((resource) => resource.type === 'video' && resource.url === playerUrl));
     if (exactResource) return exactResource;
     const authorItems = context.username
@@ -539,11 +696,11 @@
     }
     return {
       ...video,
-      title: video.title || text(context?.text).slice(0, 500),
-      author: video.author || context?.username || '',
+      title: cleanCaption(video.title) || cleanCaption(context?.text) || '',
+      author: cleanAuthorName(video.author) || cleanAuthorName(context?.username) || video.author || context?.username || '',
       duration: video.duration || positiveNumber(player?.duration),
       cover: video.cover || httpsUrl(player?.poster),
-      resources: consolidateResources(finalizeVideoResources(resources, video.duration || positiveNumber(player?.duration)))
+      resources: consolidateResources(finalizeVideoResources(resources))
     };
   }
 
@@ -554,14 +711,15 @@
     if (!url) return null;
     const width = positiveNumber(player.videoWidth || player.width);
     const height = positiveNumber(player.videoHeight || player.height);
-    const title = meta('meta[property="og:title"]') || document.title.replace(/\s*\|\s*TikTok.*$/i, '');
-    const description = meta('meta[property="og:description"]') || meta('meta[name="description"]');
+    const title = cleanCaption(meta('meta[property="og:title"]'))
+      || cleanCaption(document.title.replace(/\s*\|\s*TikTok.*$/i, ''));
+    const description = cleanCaption(meta('meta[property="og:description"]') || meta('meta[name="description"]'));
     return {
       id,
       pageUrl: location.href,
-      title,
+      title: title || description || '',
       description,
-      author: username,
+      author: cleanAuthorName(username) || username || '',
       authorId: '',
       duration: positiveNumber(player.duration),
       publishTime: '',
@@ -607,7 +765,16 @@
     const context = feedContext(player);
     const ids = context.ids?.length ? context.ids : (context.id ? [context.id] : []);
     const selected = feedItem(items, context, playerUrl) || ids.map((id) => findStateItem(id)).find(Boolean) || null;
-    const video = withPlayerResource(selected?.video, player, context) || (context.id ? domVideo(context.id, context.username, player) : null);
+    if (context.sponsored && context.id && !sponsoredDetails.has(context.id)) {
+      const pageUrl = selected?.video?.pageUrl || (context.username ? location.origin + '/@' + encodeURIComponent(context.username) + '/video/' + context.id : '');
+      if (pageUrl) loadSponsoredDetail(context.id, pageUrl);
+      const pendingVideo = selected?.video || (context.id ? domVideo(context.id, context.username, player) : null);
+      if (!pendingVideo) return { kind: 'feed', reason: 'no-matching-item', activeId: context.id, url: location.href };
+      return { kind: 'video', video: { ...pendingVideo, resources: [] }, creator: creatorFromState(items, context.username), url: location.href };
+    }
+    const video = context.sponsored
+      ? selected?.video || null
+      : withPlayerResource(selected?.video, player, context) || (context.id ? domVideo(context.id, context.username, player) : null);
     if (!video) return { kind: 'feed', reason: 'no-matching-item', activeId: context.id, url: location.href };
     const item = selected?.item;
     const author = authorFrom(item || {});
@@ -626,14 +793,14 @@
       const serialized = JSON.stringify(payload);
       if (!force && serialized === lastSnapshotJson) return;
       lastSnapshotJson = serialized;
-      window.postMessage({ source: SOURCE, version: 2, type: 'SNAPSHOT', payload }, location.origin);
+      window.postMessage({ source: SOURCE, version: 4, type: 'SNAPSHOT', payload }, location.origin);
     } catch (error) {
       const payload = { kind: 'feed', reason: 'parse-error', url: location.href };
       const serialized = JSON.stringify(payload);
       if (!force && serialized === lastSnapshotJson) return;
       lastSnapshotJson = serialized;
       console.error('[TikTokDL] 页面解析失败', error);
-      window.postMessage({ source: SOURCE, version: 2, type: 'SNAPSHOT', payload }, location.origin);
+      window.postMessage({ source: SOURCE, version: 4, type: 'SNAPSHOT', payload }, location.origin);
     }
   }
 
@@ -670,6 +837,8 @@
   ['play', 'playing', 'loadedmetadata', 'canplay', 'emptied'].forEach((name) => {
     document.addEventListener(name, queueEmit, true);
   });
+  document.addEventListener('scroll', queueEmit, true);
+  watchItemResponses();
   watchLocation();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => emit(), { once: true });
   else queueMicrotask(emit);

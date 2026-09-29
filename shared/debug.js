@@ -56,7 +56,7 @@
 
     function render() {
       const { logEl, countEl } = nodes();
-      if (logEl) logEl.textContent = lines.join('\n') || '暂无日志';
+      if (logEl) logEl.textContent = lines.join('\n') || (globalThis.DownloaderKit?.i18n?.t?.('noLogs') || 'No logs');
       if (countEl) countEl.textContent = String(lines.length);
     }
 
@@ -94,7 +94,7 @@
 
     async function copy() {
       const { copyEl } = nodes();
-      const text = lines.join('\n') || '暂无日志';
+      const text = lines.join('\n') || (globalThis.DownloaderKit?.i18n?.t?.('noLogs') || 'No logs');
       try {
         if (globalThis.navigator?.clipboard?.writeText) await globalThis.navigator.clipboard.writeText(text);
         else copyViaTextarea(text);
@@ -102,10 +102,10 @@
         copyViaTextarea(text);
       }
       if (copyEl) {
-        copyEl.textContent = '已复制';
-        setTimeout(() => { copyEl.textContent = '复制'; }, 1200);
+        copyEl.textContent = globalThis.DownloaderKit?.i18n?.t?.('copied') || 'Copied';
+        setTimeout(() => { copyEl.textContent = globalThis.DownloaderKit?.i18n?.t?.('copy') || 'Copy'; }, 1200);
       }
-      log('调试日志已复制');
+      log('debug log copied');
     }
 
     function bindButton(id, handler) {
@@ -126,7 +126,7 @@
     function bind() {
       bindButton(idPrefix + '-debug-clear', clear);
       bindButton(idPrefix + '-debug-copy', () => {
-        copy().catch((error) => log('复制失败', error.message || error));
+        copy().catch((error) => log('copy failed', error.message || error));
       });
       render();
     }

@@ -91,7 +91,7 @@
     api?.storage?.onChanged?.addListener?.(onStorageChanged);
 
     function list() {
-      return [{ id: 'default', name: '平台默认' }, ...catalog.map(({ id, name }) => ({ id, name }))];
+      return [{ id: 'default', name: (globalThis.DownloaderKit?.i18n?.t?.('themeTikTok') || 'TikTok') }, ...catalog.map(({ id, name }) => ({ id, name }))];
     }
 
     return {
